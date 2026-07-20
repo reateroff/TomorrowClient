@@ -1,0 +1,16 @@
+# Build output
+build/bin
+
+# Core binaries + WinTun driver are fetched via scripts/fetch-cores.sh,
+# never committed (large, and licensed separately).
+*.exe
+wintun.dll
+build/windows/wintun/
+
+# Frontend
+node_modules
+frontend/dist
+
+# Editor / OS noise
+.DS_Store
+*.log

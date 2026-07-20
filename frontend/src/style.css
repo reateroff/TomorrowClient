@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* TomorrowClient design tokens — a calm, dark grey minimal palette.
+   No harsh pure-black, no eye-searing accents. Theming lands here later. */
+@theme {
+  --color-bg: #0e0e11;
+  --color-surface: #16161a;
+  --color-surface-2: #1c1c21;
+  --color-border: #26262c;
+  --color-border-soft: #202026;
+
+  --color-text: #e7e7ea;
+  --color-text-muted: #9a9aa4;
+  --color-text-faint: #6b6b76;
+
+  --color-accent: #7c8cff;      /* soft indigo — the single brand accent */
+  --color-accent-soft: #a5b0ff;
+  --color-ok: #5bd6a0;
+  --color-danger: #ff6b6b;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+
+  --radius-lg: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* Custom, unobtrusive scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-2);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Draggable region for the frameless window title bar */
+.drag {
+  --wails-draggable: drag;
+}
+.no-drag {
+  --wails-draggable: no-drag;
+}
+
+/* Entrance animation for views/modals */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.25s ease both;
+}
+
+/* Slow pulse used by the connection orb */
+@keyframes orb-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.04);
+  }
+}
+.animate-orb {
+  animation: orb-pulse 3s ease-in-out infinite;
+}

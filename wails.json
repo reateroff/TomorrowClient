@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "TomorrowClient",
+  "outputfilename": "TomorrowClient",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "reater",
+    "email": "matveyantonov222@gmail.com"
+  },
+  "info": {
+    "productName": "TomorrowClient",
+    "productVersion": "1.0.0",
+    "companyName": "reater",
+    "copyright": "Copyright © 2026 reater",
+    "comments": "Minimal WinTun VPN client (xray / sing-box)"
+  }
+}

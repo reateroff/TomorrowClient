@@ -1,9 +1,11 @@
-import { Shield, Server, Settings as Cog } from "lucide-react";
+import { Shield, Server, Globe, Split, Settings as Cog } from "lucide-react";
 import type { ViewKey } from "../types";
 
 const NAV: { key: ViewKey; label: string; icon: typeof Shield }[] = [
   { key: "connection", label: "Соединение", icon: Shield },
   { key: "profiles", label: "Профили", icon: Server },
+  { key: "configs", label: "Конфигурации", icon: Globe },
+  { key: "routing", label: "Маршрутизация", icon: Split },
   { key: "settings", label: "Настройки", icon: Cog },
 ];
 

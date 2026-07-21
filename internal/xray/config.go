@@ -53,6 +53,15 @@ var privateCIDRs = []any{
 
 func routing(s model.AppSettings) map[string]any {
 	rules := []any{}
+
+	// User-defined overrides first so they take priority. Process rules are
+	// skipped: xray has no reliable per-process routing on Windows.
+	for _, r := range s.Rules {
+		if rule := userRule(r); rule != nil {
+			rules = append(rules, rule)
+		}
+	}
+
 	if s.RoutingMode == model.RoutingRules {
 		rules = append(rules, map[string]any{
 			"type":        "field",
@@ -64,6 +73,32 @@ func routing(s model.AppSettings) map[string]any {
 		"domainStrategy": "IPIfNonMatch",
 		"rules":          rules,
 	}
+}
+
+// userRule converts a RoutingRule into an xray "field" routing rule. Domain and
+// IP rules are supported; process rules are ignored (returns nil).
+func userRule(r model.RoutingRule) map[string]any {
+	if r.Value == "" {
+		return nil
+	}
+	rule := map[string]any{"type": "field"}
+	switch r.Type {
+	case "domain":
+		rule["domain"] = []any{"domain:" + r.Value}
+	case "ip":
+		rule["ip"] = []any{r.Value}
+	default:
+		return nil
+	}
+	switch r.Action {
+	case "block":
+		rule["outboundTag"] = "block"
+	case "direct":
+		rule["outboundTag"] = "direct"
+	default:
+		rule["outboundTag"] = "proxy"
+	}
+	return rule
 }
 
 // outbound converts a profile into an xray outbound object.

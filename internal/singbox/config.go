@@ -54,14 +54,17 @@ func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 		"outbounds": []any{
 			outbound(p),
 			map[string]any{"type": "direct", "tag": "direct"},
+			map[string]any{"type": "block", "tag": "block"},
 		},
 		"route": route(s),
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
-// route builds the routing rules block. In "rules" mode private ranges go
-// direct; in "global" mode everything except DNS hijack goes through proxy.
+// route builds the routing rules block. User-defined rules are applied first
+// (domain / ip / process → proxy, direct or block), then the routing-mode
+// defaults. In "rules" mode private ranges go direct; in "global" mode
+// everything except DNS hijack goes through proxy.
 func route(s model.AppSettings) map[string]any {
 	// New-style rule actions (sing-box 1.11+) instead of legacy dns/block
 	// special outbounds, so the config stays valid on 1.12/1.13.
@@ -69,6 +72,14 @@ func route(s model.AppSettings) map[string]any {
 		map[string]any{"action": "sniff"},
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 	}
+
+	// User-defined overrides take priority over the mode defaults.
+	for _, r := range s.Rules {
+		if rule := userRule(r); rule != nil {
+			rules = append(rules, rule)
+		}
+	}
+
 	if s.RoutingMode == model.RoutingRules {
 		rules = append(rules,
 			map[string]any{"ip_is_private": true, "outbound": "direct"},
@@ -79,6 +90,46 @@ func route(s model.AppSettings) map[string]any {
 		"final":                 "proxy",
 		"auto_detect_interface": true,
 	}
+}
+
+// userRule converts a single RoutingRule into a sing-box route rule. The "block"
+// action maps to the new-style reject action; proxy/direct map to an outbound.
+func userRule(r model.RoutingRule) map[string]any {
+	if r.Value == "" {
+		return nil
+	}
+	rule := map[string]any{}
+	switch r.Type {
+	case "domain":
+		rule["domain_suffix"] = []any{r.Value}
+	case "ip":
+		rule["ip_cidr"] = []any{normalizeCIDR(r.Value)}
+	case "process":
+		rule["process_name"] = []any{r.Value}
+	default:
+		return nil
+	}
+	switch r.Action {
+	case "block":
+		rule["action"] = "reject"
+	case "direct":
+		rule["outbound"] = "direct"
+	default: // proxy
+		rule["outbound"] = "proxy"
+	}
+	return rule
+}
+
+// normalizeCIDR appends /32 to a bare IPv4 address so ip_cidr always gets a
+// prefix length.
+func normalizeCIDR(v string) string {
+	if strings.Contains(v, "/") {
+		return v
+	}
+	if strings.Contains(v, ":") {
+		return v + "/128"
+	}
+	return v + "/32"
 }
 
 // outbound converts a profile into the matching sing-box outbound object.
@@ -104,6 +155,43 @@ func outbound(p model.Profile) map[string]any {
 		base["type"] = "shadowsocks"
 		base["method"] = p.Method
 		base["password"] = p.Password
+	case model.ProtoHysteria2:
+		base["type"] = "hysteria2"
+		base["password"] = p.Password
+		if p.Obfs != "" {
+			base["obfs"] = map[string]any{
+				"type":     p.Obfs,
+				"password": p.ObfsPassword,
+			}
+		}
+		if p.UpMbps > 0 {
+			base["up_mbps"] = p.UpMbps
+		}
+		if p.DownMbps > 0 {
+			base["down_mbps"] = p.DownMbps
+		}
+	case model.ProtoHysteria:
+		base["type"] = "hysteria"
+		base["auth_str"] = p.Password
+		if p.Obfs != "" {
+			base["obfs"] = p.Obfs
+		}
+		if p.UpMbps > 0 {
+			base["up_mbps"] = p.UpMbps
+		}
+		if p.DownMbps > 0 {
+			base["down_mbps"] = p.DownMbps
+		}
+	case model.ProtoTUIC:
+		base["type"] = "tuic"
+		base["uuid"] = p.UUID
+		base["password"] = p.Password
+		if p.Congestion != "" {
+			base["congestion_control"] = p.Congestion
+		}
+		if p.UDPRelayMode != "" {
+			base["udp_relay_mode"] = p.UDPRelayMode
+		}
 	}
 
 	if tls := tlsBlock(p); tls != nil {

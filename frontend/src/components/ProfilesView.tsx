@@ -2,12 +2,12 @@ import { useState } from "react";
 import {
   Plus,
   Trash2,
-  CheckCircle2,
   Server,
-  Zap,
   Rss,
   RefreshCw,
   Loader2,
+  Link2,
+  Check,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
 import AddModal from "./AddModal";
@@ -15,28 +15,27 @@ import AddModal from "./AddModal";
 interface Props {
   profiles: Profile[];
   subscriptions: Subscription[];
-  activeId: string;
-  connected: boolean;
+  selectedGroup: string;
   onImportLink: (raw: string) => Promise<void>;
   onAddSub: (name: string, url: string) => Promise<void>;
   onUpdateSub: (id: string) => Promise<void>;
   onDeleteSub: (id: string) => void;
-  onDelete: (id: string) => void;
-  onActivate: (id: string) => void;
+  // Pick a group as the active one; the Configs tab shows its servers.
+  onSelectGroup: (groupId: string) => void;
 }
 
-// The server list, grouped by subscription with manually-added servers on top.
+// Lists the added profiles as groups: manually-added servers and each VPN
+// subscription. Selecting a group marks it active; its locations are chosen
+// separately in the Configs tab.
 export default function ProfilesView({
   profiles,
   subscriptions,
-  activeId,
-  connected,
+  selectedGroup,
   onImportLink,
   onAddSub,
   onUpdateSub,
   onDeleteSub,
-  onDelete,
-  onActivate,
+  onSelectGroup,
 }: Props) {
   const [adding, setAdding] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -66,7 +65,7 @@ export default function ProfilesView({
         </div>
         <button
           onClick={() => setAdding(true)}
-          className="flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
+          className="no-drag flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
         >
           <Plus size={16} />
           Добавить
@@ -83,71 +82,35 @@ export default function ProfilesView({
           </p>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
-          {manual.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {manual.map((p) => (
-                <ProfileRow
-                  key={p.id}
-                  profile={p}
-                  active={p.id === activeId}
-                  connected={connected}
-                  onActivate={onActivate}
-                  onDelete={onDelete}
-                />
-              ))}
-            </div>
-          )}
-
-          {subscriptions.map((sub) => {
-            const servers = bySub(sub.id);
-            const isUpdating = updating === sub.id;
-            return (
-              <div key={sub.id} className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 px-1">
-                  <Rss size={13} className="shrink-0 text-accent" />
-                  <span className="truncate text-xs font-medium text-text-muted">
-                    {sub.name}
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] text-text-faint">
-                    {servers.length}
-                  </span>
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      onClick={() => runUpdate(sub.id)}
-                      disabled={isUpdating}
-                      className="rounded-md p-1.5 text-text-faint transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
-                      aria-label="Обновить"
-                    >
-                      {isUpdating ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <RefreshCw size={14} />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => onDeleteSub(sub.id)}
-                      className="rounded-md p-1.5 text-text-faint transition hover:bg-danger/15 hover:text-danger"
-                      aria-label="Удалить подписку"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-                {servers.map((p) => (
-                  <ProfileRow
-                    key={p.id}
-                    profile={p}
-                    active={p.id === activeId}
-                    connected={connected}
-                    onActivate={onActivate}
-                    onDelete={onDelete}
-                  />
-                ))}
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <p className="mb-3 text-xs text-text-faint">
+            Выберите профиль — его локации появятся во вкладке «Конфигурации».
+          </p>
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
+            {manual.length > 0 && (
+              <GroupCard
+                icon={<Link2 size={16} />}
+                name="Добавленные вручную"
+                count={manual.length}
+                selected={selectedGroup === "manual"}
+                onSelect={() => onSelectGroup("manual")}
+              />
+            )}
+            {subscriptions.map((sub) => (
+              <GroupCard
+                key={sub.id}
+                icon={<Rss size={16} />}
+                name={sub.name}
+                count={bySub(sub.id).length}
+                selected={selectedGroup === sub.id}
+                onSelect={() => onSelectGroup(sub.id)}
+                updating={updating === sub.id}
+                onUpdate={() => runUpdate(sub.id)}
+                onDelete={() => onDeleteSub(sub.id)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {adding && (
@@ -161,58 +124,84 @@ export default function ProfilesView({
   );
 }
 
-function ProfileRow({
-  profile: p,
-  active,
-  connected,
-  onActivate,
+// A subscription (or manual group) card. Clicking it selects the group; the
+// selected one shows an "активен" badge.
+function GroupCard({
+  icon,
+  name,
+  count,
+  selected,
+  onSelect,
+  updating,
+  onUpdate,
   onDelete,
 }: {
-  profile: Profile;
-  active: boolean;
-  connected: boolean;
-  onActivate: (id: string) => void;
-  onDelete: (id: string) => void;
+  icon: React.ReactNode;
+  name: string;
+  count: number;
+  selected: boolean;
+  onSelect: () => void;
+  updating?: boolean;
+  onUpdate?: () => void;
+  onDelete?: () => void;
 }) {
   return (
     <div
       className={`group flex items-center gap-3 rounded-lg border px-4 py-3 transition ${
-        active
+        selected
           ? "border-accent/50 bg-surface-2"
-          : "border-border bg-surface hover:border-border hover:bg-surface-2/60"
+          : "border-border bg-surface hover:bg-surface-2/60"
       }`}
     >
       <button
-        onClick={() => onActivate(p.id)}
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        onClick={onSelect}
+        className="no-drag flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        {active ? (
-          <CheckCircle2 size={18} className="shrink-0 text-accent" />
-        ) : (
-          <Server size={18} className="shrink-0 text-text-faint" />
-        )}
+        <span
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
+            selected ? "bg-accent/15 text-accent" : "bg-surface-2 text-text-muted"
+          }`}
+        >
+          {icon}
+        </span>
         <div className="min-w-0">
-          <div className="truncate text-sm text-text">{p.name}</div>
-          <div className="truncate font-mono text-xs text-text-faint">
-            {p.protocol} · {p.address}:{p.port}
+          <div className="truncate text-sm text-text">{name}</div>
+          <div className="font-mono text-xs text-text-faint">
+            {count} сервер(ов)
           </div>
         </div>
       </button>
 
-      {active && connected && (
-        <span className="flex items-center gap-1 rounded-md bg-ok/15 px-2 py-1 font-mono text-[10px] text-ok">
-          <Zap size={11} />
+      {selected && (
+        <span className="flex items-center gap-1 rounded-md bg-accent/15 px-2 py-1 font-mono text-[10px] text-accent">
+          <Check size={11} />
           активен
         </span>
       )}
 
-      <button
-        onClick={() => onDelete(p.id)}
-        className="no-drag rounded-md p-1.5 text-text-faint opacity-0 transition hover:bg-danger/15 hover:text-danger group-hover:opacity-100"
-        aria-label="Удалить"
-      >
-        <Trash2 size={15} />
-      </button>
+      {onUpdate && (
+        <button
+          onClick={onUpdate}
+          disabled={updating}
+          className="no-drag rounded-md p-1.5 text-text-faint transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
+          aria-label="Обновить"
+        >
+          {updating ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <RefreshCw size={15} />
+          )}
+        </button>
+      )}
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="no-drag rounded-md p-1.5 text-text-faint transition hover:bg-danger/15 hover:text-danger"
+          aria-label="Удалить подписку"
+        >
+          <Trash2 size={15} />
+        </button>
+      )}
     </div>
   );
 }

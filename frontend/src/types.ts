@@ -5,7 +5,14 @@
 export type Core = "sing-box" | "xray";
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
 export type RoutingMode = "global" | "rules";
-export type Protocol = "vless" | "vmess" | "trojan" | "shadowsocks";
+export type Protocol =
+  | "vless"
+  | "vmess"
+  | "trojan"
+  | "shadowsocks"
+  | "hysteria"
+  | "hysteria2"
+  | "tuic";
 
 export interface Profile {
   id: string;
@@ -28,6 +35,12 @@ export interface Profile {
   path?: string;
   host?: string;
   serviceName?: string;
+  obfs?: string;
+  obfsPassword?: string;
+  upMbps?: number;
+  downMbps?: number;
+  congestion?: string;
+  udpRelayMode?: string;
   raw?: string;
   subId?: string;
 }
@@ -46,6 +59,12 @@ export interface AppInfo {
   builtWith: string;
 }
 
+export interface RoutingRule {
+  type: "domain" | "ip" | "process";
+  value: string;
+  action: "proxy" | "direct" | "block";
+}
+
 export interface AppSettings {
   // Connection
   core: Core;
@@ -55,6 +74,7 @@ export interface AppSettings {
   tunName: string;
   stack: string; // "gvisor" | "system"
   mtu: number;
+  rules: RoutingRule[];
   // Application
   autoConnect: boolean;
   launchAtStartup: boolean;
@@ -81,4 +101,4 @@ export interface Status {
   connectedAt: number;
 }
 
-export type ViewKey = "connection" | "profiles" | "settings";
+export type ViewKey = "connection" | "profiles" | "configs" | "routing" | "settings";

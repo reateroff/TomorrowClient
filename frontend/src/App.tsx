@@ -3,6 +3,8 @@ import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ConnectionView from "./components/ConnectionView";
 import ProfilesView from "./components/ProfilesView";
+import ConfigsView from "./components/ConfigsView";
+import RoutingView from "./components/RoutingView";
 import SettingsView from "./components/SettingsView";
 import type {
   AppInfo,
@@ -46,6 +48,7 @@ const defaultSettings: AppSettings = {
   tunName: "TomorrowTun",
   stack: "gvisor",
   mtu: 0,
+  rules: [],
   autoConnect: false,
   launchAtStartup: false,
   theme: "graphite",
@@ -61,6 +64,8 @@ export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [status, setStatus] = useState<Status>(emptyStatus);
+  // Which profile group is open in the Configs tab ("manual" or a sub id).
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
 
   // Initial load + subscribe to live status pushes from the engine.
   useEffect(() => {
@@ -181,14 +186,31 @@ export default function App() {
             <ProfilesView
               profiles={profiles}
               subscriptions={subscriptions}
-              activeId={settings.activeProfileId}
-              connected={connected}
+              selectedGroup={selectedGroup}
               onImportLink={handleImport}
               onAddSub={handleAddSub}
               onUpdateSub={handleUpdateSub}
               onDeleteSub={handleDeleteSub}
+              onSelectGroup={setSelectedGroup}
+            />
+          )}
+          {view === "configs" && (
+            <ConfigsView
+              profiles={profiles}
+              subscriptions={subscriptions}
+              selectedGroup={selectedGroup}
+              activeId={settings.activeProfileId}
+              connected={connected}
+              onSelectGroup={setSelectedGroup}
               onDelete={handleDelete}
               onActivate={handleActivate}
+            />
+          )}
+          {view === "routing" && (
+            <RoutingView
+              settings={settings}
+              disabled={connected || status.state === "connecting"}
+              onChange={handleSettings}
             />
           )}
           {view === "settings" && (

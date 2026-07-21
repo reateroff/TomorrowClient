@@ -1,0 +1,62 @@
+// Helpers for rendering a profile's protocol stack as a readable chain, e.g.
+// "VLESS · XHTTP · REALITY" or "Hysteria2 · TLS", instead of the bare protocol.
+import type { Profile } from "./types";
+
+const PROTO_LABEL: Record<string, string> = {
+  vless: "VLESS",
+  vmess: "VMess",
+  trojan: "Trojan",
+  shadowsocks: "Shadowsocks",
+  hysteria: "Hysteria",
+  hysteria2: "Hysteria2",
+  tuic: "TUIC",
+};
+
+const NET_LABEL: Record<string, string> = {
+  tcp: "TCP",
+  ws: "WS",
+  grpc: "gRPC",
+  http: "HTTP",
+  httpupgrade: "HTTPUpgrade",
+  xhttp: "XHTTP",
+  h2: "H2",
+  quic: "QUIC",
+  udp: "UDP",
+};
+
+const SEC_LABEL: Record<string, string> = {
+  tls: "TLS",
+  reality: "REALITY",
+  xtls: "XTLS",
+};
+
+// QUIC-based protocols carry their own transport and always run over TLS, so we
+// don't repeat the network segment for them.
+const UDP_BASED = new Set(["hysteria", "hysteria2", "tuic"]);
+
+// protoLabel returns the human-readable protocol name.
+export function protoLabel(p: Profile): string {
+  return PROTO_LABEL[p.protocol] ?? p.protocol.toUpperCase();
+}
+
+// describeChain builds the "protocol · transport · security" string shown under
+// each server name.
+export function describeChain(p: Profile): string {
+  const parts: string[] = [protoLabel(p)];
+
+  if (!UDP_BASED.has(p.protocol)) {
+    const net = (p.network ?? "").toLowerCase();
+    if (net && net !== "tcp") {
+      parts.push(NET_LABEL[net] ?? net.toUpperCase());
+    }
+  }
+
+  const sec = (p.security ?? "").toLowerCase();
+  if (sec && sec !== "none") {
+    parts.push(SEC_LABEL[sec] ?? sec.toUpperCase());
+  } else if (UDP_BASED.has(p.protocol)) {
+    parts.push("TLS");
+  }
+
+  return parts.join(" · ");
+}

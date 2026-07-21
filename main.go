@@ -29,9 +29,16 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 12, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		// Keep the browser's right-click context menu off in production so the
+		// window behaves like a native app.
+		EnableDefaultContextMenu: false,
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+			// Lock the webview down: no browser zoom controls or pinch-zoom.
+			IsZoomControlEnabled: false,
+			ZoomFactor:           1.0,
+			DisablePinchZoom:     true,
 		},
 		Bind: []interface{}{
 			app,

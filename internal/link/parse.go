@@ -29,6 +29,12 @@ func Parse(raw string) (model.Profile, error) {
 		return parseTrojan(raw)
 	case strings.HasPrefix(raw, "ss://"):
 		return parseShadowsocks(raw)
+	case strings.HasPrefix(raw, "hysteria2://"), strings.HasPrefix(raw, "hy2://"):
+		return parseHysteria2(raw)
+	case strings.HasPrefix(raw, "hysteria://"), strings.HasPrefix(raw, "hy://"):
+		return parseHysteria(raw)
+	case strings.HasPrefix(raw, "tuic://"):
+		return parseTUIC(raw)
 	default:
 		return model.Profile{}, fmt.Errorf("unsupported link scheme")
 	}
@@ -205,8 +211,99 @@ func parseShadowsocks(raw string) (model.Profile, error) {
 	return p, nil
 }
 
-// --- helpers ---
+// parseHysteria2 handles hysteria2://password@host:port?params#name (also hy2://).
+// The userinfo is the auth password; TLS is always on for Hysteria2.
+func parseHysteria2(raw string) (model.Profile, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return model.Profile{}, err
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		port = 443
+	}
+	q := u.Query()
+	p := model.Profile{
+		ID:           newID(),
+		Protocol:     model.ProtoHysteria2,
+		Address:      u.Hostname(),
+		Port:         port,
+		Password:     firstNonEmpty(u.User.Username(), q.Get("password")),
+		Network:      "udp",
+		Security:     "tls",
+		SNI:          firstNonEmpty(q.Get("sni"), q.Get("peer")),
+		ALPN:         q.Get("alpn"),
+		Obfs:         q.Get("obfs"),
+		ObfsPassword: q.Get("obfs-password"),
+		Raw:          raw,
+	}
+	p.Name = nameFromFragment(u, u.Hostname())
+	return p, nil
+}
 
+// parseHysteria handles the legacy Hysteria v1 hysteria://host:port?params#name
+// (also hy://). Auth is carried in the auth/auth_str query parameter.
+func parseHysteria(raw string) (model.Profile, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return model.Profile{}, err
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		port = 443
+	}
+	q := u.Query()
+	p := model.Profile{
+		ID:       newID(),
+		Protocol: model.ProtoHysteria,
+		Address:  u.Hostname(),
+		Port:     port,
+		Password: firstNonEmpty(q.Get("auth"), q.Get("auth_str"), u.User.Username()),
+		Network:  "udp",
+		Security: "tls",
+		SNI:      firstNonEmpty(q.Get("sni"), q.Get("peer")),
+		ALPN:     q.Get("alpn"),
+		Obfs:     q.Get("obfs"),
+		UpMbps:   atoiDefault(firstNonEmpty(q.Get("upmbps"), q.Get("up")), 0),
+		DownMbps: atoiDefault(firstNonEmpty(q.Get("downmbps"), q.Get("down")), 0),
+		Raw:      raw,
+	}
+	p.Name = nameFromFragment(u, u.Hostname())
+	return p, nil
+}
+
+// parseTUIC handles tuic://uuid:password@host:port?params#name (TUIC v5).
+func parseTUIC(raw string) (model.Profile, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return model.Profile{}, err
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		port = 443
+	}
+	q := u.Query()
+	pass, _ := u.User.Password()
+	p := model.Profile{
+		ID:           newID(),
+		Protocol:     model.ProtoTUIC,
+		Address:      u.Hostname(),
+		Port:         port,
+		UUID:         u.User.Username(),
+		Password:     pass,
+		Network:      "udp",
+		Security:     "tls",
+		SNI:          firstNonEmpty(q.Get("sni"), q.Get("peer")),
+		ALPN:         q.Get("alpn"),
+		Congestion:   firstNonEmpty(q.Get("congestion_control"), q.Get("congestion")),
+		UDPRelayMode: q.Get("udp_relay_mode"),
+		Raw:          raw,
+	}
+	p.Name = nameFromFragment(u, u.Hostname())
+	return p, nil
+}
+
+// --- helpers ---
 func decodeBase64(s string) (string, error) {
 	// Try the URL-safe no-padding variant first, then standard.
 	for _, enc := range []*base64.Encoding{
@@ -226,6 +323,14 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// atoiDefault parses s as an int, returning def on failure or empty input.
+func atoiDefault(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
 }
 
 func splitColon(s string) (a, b string) {

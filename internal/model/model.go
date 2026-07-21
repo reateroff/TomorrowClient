@@ -36,6 +36,9 @@ const (
 	ProtoVMess       Protocol = "vmess"
 	ProtoTrojan      Protocol = "trojan"
 	ProtoShadowsocks Protocol = "shadowsocks"
+	ProtoHysteria    Protocol = "hysteria"  // Hysteria v1 (QUIC)
+	ProtoHysteria2   Protocol = "hysteria2" // Hysteria2 (QUIC)
+	ProtoTUIC        Protocol = "tuic"      // TUIC v5 (QUIC)
 )
 
 // Profile describes a single server / outbound. Fields are a superset that
@@ -66,6 +69,14 @@ type Profile struct {
 	Host       string `json:"host,omitempty"`       // ws/http host header
 	ServiceName string `json:"serviceName,omitempty"` // grpc
 
+	// QUIC-based protocols (hysteria / hysteria2 / tuic)
+	Obfs          string `json:"obfs,omitempty"`          // hysteria2 salamander / hysteria obfs
+	ObfsPassword  string `json:"obfsPassword,omitempty"`  // hysteria2 obfs password
+	UpMbps        int    `json:"upMbps,omitempty"`        // hysteria up bandwidth
+	DownMbps      int    `json:"downMbps,omitempty"`      // hysteria down bandwidth
+	Congestion    string `json:"congestion,omitempty"`    // tuic congestion control (bbr/cubic/new_reno)
+	UDPRelayMode  string `json:"udpRelayMode,omitempty"`  // tuic udp relay mode (native/quic)
+
 	// The original share link, kept so we can re-export / debug.
 	Raw string `json:"raw,omitempty"`
 
@@ -88,6 +99,14 @@ type Subscription struct {
 	Count int `json:"count"`
 }
 
+// RoutingRule is one user-defined routing entry: match traffic by domain, IP
+// or process (application) and send it through the proxy, direct, or block it.
+type RoutingRule struct {
+	Type   string `json:"type"`   // "domain" | "ip" | "process"
+	Value  string `json:"value"`  // domain suffix, IP/CIDR, or process name
+	Action string `json:"action"` // "proxy" | "direct" | "block"
+}
+
 // AppSettings is the persisted user configuration.
 type AppSettings struct {
 	// --- Connection ---
@@ -103,6 +122,8 @@ type AppSettings struct {
 	Stack string `json:"stack"`
 	// MTU of the TUN interface; 0 means the core default (usually 9000/1500).
 	MTU int `json:"mtu"`
+	// Rules are user-defined domain/ip/app routing overrides.
+	Rules []RoutingRule `json:"rules"`
 
 	// --- Application ---
 	// AutoConnect connects to the last active profile on launch.

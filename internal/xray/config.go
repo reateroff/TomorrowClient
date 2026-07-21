@@ -19,7 +19,7 @@ const APIPort = 10809
 // Build renders a full xray config for the given profile.
 func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 	cfg := map[string]any{
-		"log": map[string]any{"loglevel": "warning"},
+		"log": map[string]any{"loglevel": "info"},
 		"inbounds": []any{
 			map[string]any{
 				"tag":      "socks-in",

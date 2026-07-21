@@ -7,16 +7,23 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+
+	"TomorrowClient/internal/model"
 )
 
 // These constants describe the virtual TUN adapter used by the xray+tun2socks
-// path. sing-box configures its own adapter internally.
+// path. sing-box configures its own adapter internally. The adapter name is a
+// package variable (activeTunName) set from settings at connect time so the
+// route setup, the stats matcher and the sing-box config all agree.
 const (
-	tunAdapterName = "TomorrowTun"
-	tunAddr        = "172.19.0.2"
-	tunGateway     = "172.19.0.1"
-	tunMask        = "255.255.255.252"
+	tunAddr    = "172.19.0.2"
+	tunGateway = "172.19.0.1"
+	tunMask    = "255.255.255.252"
 )
+
+// activeTunName is the WinTun adapter name in use for the current connection.
+// It defaults to the built-in name and is overwritten by the engine on Connect.
+var activeTunName = model.DefaultTunName
 
 // run executes a command hidden and returns combined output on error.
 func run(name string, args ...string) error {
@@ -32,7 +39,7 @@ func run(name string, args ...string) error {
 // configureTun assigns a static IP to the tun2socks WinTun adapter.
 func configureTun() error {
 	return run("netsh", "interface", "ip", "set", "address",
-		"name="+tunAdapterName, "static", tunAddr, tunMask, tunGateway)
+		"name="+activeTunName, "static", tunAddr, tunMask, tunGateway)
 }
 
 // setDNSOnTun points the tun adapter at the given DNS server.
@@ -41,7 +48,7 @@ func setDNSOnTun(dns string) error {
 		return nil
 	}
 	return run("netsh", "interface", "ip", "set", "dns",
-		"name="+tunAdapterName, "static", dns)
+		"name="+activeTunName, "static", dns)
 }
 
 // addRoutes sends the default route through the tun gateway (low metric) and

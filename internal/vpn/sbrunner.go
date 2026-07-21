@@ -16,6 +16,7 @@ import (
 type sbRunner struct {
 	cmd        *exec.Cmd
 	configPath string
+	logs       *LogSink
 }
 
 // start writes the config and launches sing-box run -c <config>.
@@ -36,10 +37,24 @@ func (r *sbRunner) start(p model.Profile, s model.AppSettings) error {
 	r.cmd = exec.Command(bin, "run", "-c", r.configPath)
 	r.cmd.Dir = binDir()
 	hidden(r.cmd)
+	r.pipeLogs()
 	if err := r.cmd.Start(); err != nil {
 		return fmt.Errorf("start sing-box: %w", err)
 	}
 	return nil
+}
+
+// pipeLogs attaches stdout/stderr to the log sink when one is present.
+func (r *sbRunner) pipeLogs() {
+	if r.logs == nil {
+		return
+	}
+	if out, err := r.cmd.StdoutPipe(); err == nil {
+		go r.logs.pump(out, "")
+	}
+	if errp, err := r.cmd.StderrPipe(); err == nil {
+		go r.logs.pump(errp, "")
+	}
 }
 
 // stop terminates sing-box and removes the temp config.

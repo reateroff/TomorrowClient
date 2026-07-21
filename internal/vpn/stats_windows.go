@@ -84,7 +84,7 @@ func adapterBytes() (rx, tx uint64, ok bool) {
 
 	rows := unsafe.Slice(&table.Table[0], int(table.NumEntries))
 	for i := range rows {
-		if windows.UTF16ToString(rows[i].Alias[:]) == tunAdapterName {
+		if windows.UTF16ToString(rows[i].Alias[:]) == activeTunName {
 			return rows[i].InOctets, rows[i].OutOctets, true
 		}
 	}

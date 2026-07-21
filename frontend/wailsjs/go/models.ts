@@ -25,8 +25,16 @@ export namespace model {
 	    core: string;
 	    activeProfileId: string;
 	    routingMode: string;
-	    autoConnect: boolean;
 	    dns: string;
+	    tunName: string;
+	    stack: string;
+	    mtu: number;
+	    autoConnect: boolean;
+	    launchAtStartup: boolean;
+	    theme: string;
+	    accent: string;
+	    font: string;
+	    radius: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
@@ -37,8 +45,16 @@ export namespace model {
 	        this.core = source["core"];
 	        this.activeProfileId = source["activeProfileId"];
 	        this.routingMode = source["routingMode"];
-	        this.autoConnect = source["autoConnect"];
 	        this.dns = source["dns"];
+	        this.tunName = source["tunName"];
+	        this.stack = source["stack"];
+	        this.mtu = source["mtu"];
+	        this.autoConnect = source["autoConnect"];
+	        this.launchAtStartup = source["launchAtStartup"];
+	        this.theme = source["theme"];
+	        this.accent = source["accent"];
+	        this.font = source["font"];
+	        this.radius = source["radius"];
 	    }
 	}
 	export class Profile {

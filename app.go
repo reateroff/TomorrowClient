@@ -11,6 +11,7 @@ import (
 
 	"TomorrowClient/internal/link"
 	"TomorrowClient/internal/model"
+	"TomorrowClient/internal/startup"
 	"TomorrowClient/internal/store"
 	"TomorrowClient/internal/sub"
 	"TomorrowClient/internal/vpn"
@@ -59,10 +60,18 @@ func (a *App) startup(ctx context.Context) {
 	a.store = st
 
 	// The engine pushes status snapshots to the frontend over the
-	// "vpn:status" event whenever the connection state or traffic changes.
-	a.engine = vpn.New(func(s model.Status) {
-		runtime.EventsEmit(ctx, "vpn:status", s)
-	})
+	// "vpn:status" event, and each core log line over "vpn:log".
+	a.engine = vpn.New(
+		func(s model.Status) { runtime.EventsEmit(ctx, "vpn:status", s) },
+		func(line string) { runtime.EventsEmit(ctx, "vpn:log", line) },
+	)
+
+	// Auto-connect to the last active profile if the user enabled it.
+	if s := a.store.Settings(); s.AutoConnect && s.ActiveProfileID != "" {
+		if p, ok := a.store.Profile(s.ActiveProfileID); ok {
+			go func() { _ = a.engine.Connect(p, s) }()
+		}
+	}
 }
 
 // shutdown makes sure the tunnel is torn down when the window closes.
@@ -189,9 +198,24 @@ func (a *App) GetSettings() model.AppSettings {
 	return a.store.Settings()
 }
 
-// SaveSettings persists settings.
+// SaveSettings persists settings and applies the Windows autostart task to
+// match the LaunchAtStartup flag.
 func (a *App) SaveSettings(s model.AppSettings) error {
+	if err := startup.Set(s.LaunchAtStartup); err != nil {
+		runtime.LogError(a.ctx, "autostart: "+err.Error())
+	}
 	return a.store.SaveSettings(s)
+}
+
+// GetLogs returns the buffered core log lines (used on initial load of the
+// Logs tab).
+func (a *App) GetLogs() []string {
+	return a.engine.Logs()
+}
+
+// ClearLogs empties the in-memory core log buffer.
+func (a *App) ClearLogs() {
+	a.engine.ClearLogs()
 }
 
 // --- Connection ---

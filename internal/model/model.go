@@ -90,13 +90,49 @@ type Subscription struct {
 
 // AppSettings is the persisted user configuration.
 type AppSettings struct {
+	// --- Connection ---
 	Core            Core        `json:"core"`
 	ActiveProfileID string      `json:"activeProfileId"`
 	RoutingMode     RoutingMode `json:"routingMode"`
-	AutoConnect     bool        `json:"autoConnect"`
 	// DNS server used inside the tunnel.
 	DNS string `json:"dns"`
+	// TunName is the name of the WinTun adapter both cores create. Empty means
+	// the built-in default ("TomorrowTun").
+	TunName string `json:"tunName"`
+	// Stack is the sing-box TUN network stack: "gvisor" (default) or "system".
+	Stack string `json:"stack"`
+	// MTU of the TUN interface; 0 means the core default (usually 9000/1500).
+	MTU int `json:"mtu"`
+
+	// --- Application ---
+	// AutoConnect connects to the last active profile on launch.
+	AutoConnect bool `json:"autoConnect"`
+	// LaunchAtStartup registers a Task Scheduler task to start with Windows.
+	LaunchAtStartup bool `json:"launchAtStartup"`
+
+	// --- Appearance ---
+	// Theme is the base preset id ("graphite" / "midnight" / "coal").
+	Theme string `json:"theme"`
+	// Accent is a hex color id from the palette ("indigo", "teal", ...).
+	Accent string `json:"accent"`
+	// Font is the UI font id ("inter" / "mono" / "geist").
+	Font string `json:"font"`
+	// Radius is the corner rounding preset ("sharp" / "soft" / "round").
+	Radius string `json:"radius"`
 }
+
+// TunInterfaceName returns the configured TUN adapter name, falling back to the
+// built-in default when unset. This is the single source of truth shared by the
+// sing-box config, the xray route setup, and the traffic-stats matcher.
+func (s AppSettings) TunInterfaceName() string {
+	if s.TunName != "" {
+		return s.TunName
+	}
+	return DefaultTunName
+}
+
+// DefaultTunName is the built-in WinTun adapter name.
+const DefaultTunName = "TomorrowTun"
 
 // DefaultSettings returns the out-of-the-box configuration. sing-box is the
 // default core as requested.
@@ -106,6 +142,13 @@ func DefaultSettings() AppSettings {
 		RoutingMode: RoutingRules,
 		AutoConnect: false,
 		DNS:         "1.1.1.1",
+		TunName:     DefaultTunName,
+		Stack:       "gvisor",
+		MTU:         0,
+		Theme:       "graphite",
+		Accent:      "indigo",
+		Font:        "inter",
+		Radius:      "soft",
 	}
 }
 

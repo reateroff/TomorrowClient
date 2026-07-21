@@ -5,6 +5,8 @@ import {main} from '../models';
 
 export function AddSubscription(arg1:string,arg2:string):Promise<model.Subscription>;
 
+export function ClearLogs():Promise<void>;
+
 export function Connect(arg1:string):Promise<void>;
 
 export function DeleteProfile(arg1:string):Promise<void>;
@@ -14,6 +16,8 @@ export function DeleteSubscription(arg1:string):Promise<void>;
 export function Disconnect():Promise<void>;
 
 export function GetAppInfo():Promise<main.AppInfo>;
+
+export function GetLogs():Promise<Array<string>>;
 
 export function GetProfiles():Promise<Array<model.Profile>>;
 

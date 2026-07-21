@@ -16,6 +16,9 @@ import (
 // Wails runtime event emitter.
 type Emitter func(model.Status)
 
+// LogEmitter pushes a single core log line to the frontend.
+type LogEmitter func(string)
+
 // Engine manages a single active connection.
 type Engine struct {
 	mu       sync.Mutex
@@ -34,14 +37,25 @@ type Engine struct {
 	sb   *sbRunner
 	xr   *xRunner
 	emit Emitter
+	logs *LogSink
 
 	statsCancel context.CancelFunc
 }
 
-// New creates an engine with the given status emitter.
-func New(emit Emitter) *Engine {
-	return &Engine{state: model.StateDisconnected, emit: emit}
+// New creates an engine with the given status and log emitters.
+func New(emit Emitter, onLog LogEmitter) *Engine {
+	return &Engine{
+		state: model.StateDisconnected,
+		emit:  emit,
+		logs:  newLogSink(onLog),
+	}
 }
+
+// Logs returns the buffered core log lines.
+func (e *Engine) Logs() []string { return e.logs.Snapshot() }
+
+// ClearLogs empties the in-memory log buffer.
+func (e *Engine) ClearLogs() { e.logs.Clear() }
 
 // Status returns the current snapshot.
 func (e *Engine) Status() model.Status {
@@ -88,15 +102,17 @@ func (e *Engine) Connect(p model.Profile, s model.AppSettings) error {
 	e.profile = &p
 	e.stats = model.Stats{}
 	e.baseRx, e.baseTx = 0, 0
+	// Unify the TUN adapter name across the route setup and the stats matcher.
+	activeTunName = s.TunInterfaceName()
 	e.setState(model.StateConnecting, "")
 
 	var err error
 	switch s.Core {
 	case model.CoreXray:
-		e.xr = &xRunner{}
+		e.xr = &xRunner{logs: e.logs}
 		err = e.xr.start(p, s)
 	default: // sing-box is the default
-		e.sb = &sbRunner{}
+		e.sb = &sbRunner{logs: e.logs}
 		err = e.sb.start(p, s)
 	}
 	if err != nil {

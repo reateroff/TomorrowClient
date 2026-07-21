@@ -1,7 +1,45 @@
 @import "tailwindcss";
 
+/* Bundled UI fonts (woff2, subset to latin). Shipped in-repo so the client
+   never depends on system-installed families. Chosen in Settings → Внешний вид. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/inter.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/inter-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/geist.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/geist-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono.woff2") format("woff2");
+}
+
 /* TomorrowClient design tokens — a calm, dark grey minimal palette.
-   No harsh pure-black, no eye-searing accents. Theming lands here later. */
+   These are the defaults; theme.ts overrides them at runtime per user choice. */
 @theme {
   --color-bg: #0e0e11;
   --color-surface: #16161a;

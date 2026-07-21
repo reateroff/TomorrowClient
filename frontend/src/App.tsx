@@ -28,6 +28,7 @@ import {
   SaveSettings,
 } from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
+import { applyTheme } from "./theme";
 
 const emptyStatus: Status = {
   state: "disconnected",
@@ -37,25 +38,39 @@ const emptyStatus: Status = {
   connectedAt: 0,
 };
 
+const defaultSettings: AppSettings = {
+  core: "sing-box",
+  activeProfileId: "",
+  routingMode: "rules",
+  dns: "1.1.1.1",
+  tunName: "TomorrowTun",
+  stack: "gvisor",
+  mtu: 0,
+  autoConnect: false,
+  launchAtStartup: false,
+  theme: "graphite",
+  accent: "indigo",
+  font: "inter",
+  radius: "soft",
+};
+
 export default function App() {
   const [view, setView] = useState<ViewKey>("connection");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-  const [settings, setSettings] = useState<AppSettings>({
-    core: "sing-box",
-    activeProfileId: "",
-    routingMode: "rules",
-    autoConnect: false,
-    dns: "1.1.1.1",
-  });
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [status, setStatus] = useState<Status>(emptyStatus);
 
   // Initial load + subscribe to live status pushes from the engine.
   useEffect(() => {
     GetProfiles().then((p) => setProfiles((p as Profile[]) ?? []));
     GetSubscriptions().then((s) => setSubscriptions((s as Subscription[]) ?? []));
-    GetSettings().then((s) => setSettings(s as AppSettings));
+    GetSettings().then((s) => {
+      const cfg = s as AppSettings;
+      setSettings(cfg);
+      applyTheme(cfg);
+    });
     GetStatus().then((s) => setStatus(s as Status));
     GetAppInfo().then((i) => setAppInfo(i as AppInfo));
 
@@ -133,6 +148,7 @@ export default function App() {
 
   const handleSettings = useCallback(async (next: AppSettings) => {
     setSettings(next);
+    applyTheme(next);
     await SaveSettings(next as any);
   }, []);
 

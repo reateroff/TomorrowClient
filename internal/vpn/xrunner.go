@@ -19,6 +19,7 @@ type xRunner struct {
 	t2sCmd     *exec.Cmd
 	configPath string
 	serverIP   string
+	logs       *LogSink
 }
 
 func (r *xRunner) start(p model.Profile, s model.AppSettings) error {
@@ -44,6 +45,7 @@ func (r *xRunner) start(p model.Profile, s model.AppSettings) error {
 	r.xrayCmd = exec.Command(xrayBin, "run", "-c", r.configPath)
 	r.xrayCmd.Dir = binDir()
 	hidden(r.xrayCmd)
+	r.pipe(r.xrayCmd, "[xray] ")
 	if err := r.xrayCmd.Start(); err != nil {
 		return fmt.Errorf("start xray: %w", err)
 	}
@@ -51,12 +53,13 @@ func (r *xRunner) start(p model.Profile, s model.AppSettings) error {
 	// 2. Start tun2socks pointed at the xray SOCKS inbound.
 	proxy := fmt.Sprintf("socks5://127.0.0.1:%d", xray.SocksPort)
 	r.t2sCmd = exec.Command(t2sBin,
-		"-device", "tun://"+tunAdapterName,
+		"-device", "tun://"+activeTunName,
 		"-proxy", proxy,
 		"-loglevel", "warning",
 	)
 	r.t2sCmd.Dir = binDir()
 	hidden(r.t2sCmd)
+	r.pipe(r.t2sCmd, "[tun2socks] ")
 	if err := r.t2sCmd.Start(); err != nil {
 		r.stop()
 		return fmt.Errorf("start tun2socks: %w", err)
@@ -74,6 +77,19 @@ func (r *xRunner) start(p model.Profile, s model.AppSettings) error {
 	}
 	_ = setDNSOnTun(s.DNS)
 	return nil
+}
+
+// pipe forwards a command's stdout/stderr into the log sink with a prefix.
+func (r *xRunner) pipe(cmd *exec.Cmd, prefix string) {
+	if r.logs == nil {
+		return
+	}
+	if out, err := cmd.StdoutPipe(); err == nil {
+		go r.logs.pump(out, prefix)
+	}
+	if errp, err := cmd.StderrPipe(); err == nil {
+		go r.logs.pump(errp, prefix)
+	}
 }
 
 func (r *xRunner) stop() {

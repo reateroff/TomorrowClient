@@ -13,14 +13,26 @@ import (
 // ClashAPIAddr is the local Clash-compatible API address used to poll traffic.
 const ClashAPIAddr = "127.0.0.1:19090"
 
-// TunName is the name given to the WinTun adapter created by sing-box.
-const TunName = "TomorrowTun"
-
 // Build renders a full sing-box config for the given profile and settings.
 func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
+	// TUN inbound honours the user-chosen adapter name, network stack and MTU.
+	tun := map[string]any{
+		"type":           "tun",
+		"tag":            "tun-in",
+		"interface_name": s.TunInterfaceName(),
+		"address":        []any{"172.19.0.1/30"},
+		"auto_route":     true,
+		"strict_route":   true,
+		"stack":          firstNonEmpty(s.Stack, "gvisor"),
+		"sniff":          true,
+	}
+	if s.MTU > 0 {
+		tun["mtu"] = s.MTU
+	}
+
 	cfg := map[string]any{
 		"log": map[string]any{
-			"level":     "warn",
+			"level":     "info",
 			"timestamp": true,
 		},
 		"experimental": map[string]any{
@@ -37,16 +49,7 @@ func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 			"strategy": "ipv4_only",
 		},
 		"inbounds": []any{
-			map[string]any{
-				"type":           "tun",
-				"tag":            "tun-in",
-				"interface_name": TunName,
-				"address":        []any{"172.19.0.1/30"},
-				"auto_route":     true,
-				"strict_route":   true,
-				"stack":          "gvisor",
-				"sniff":          true,
-			},
+			tun,
 		},
 		"outbounds": []any{
 			outbound(p),

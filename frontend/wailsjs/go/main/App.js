@@ -6,6 +6,10 @@ export function AddSubscription(arg1, arg2) {
   return window['go']['main']['App']['AddSubscription'](arg1, arg2);
 }
 
+export function ClearLogs() {
+  return window['go']['main']['App']['ClearLogs']();
+}
+
 export function Connect(arg1) {
   return window['go']['main']['App']['Connect'](arg1);
 }
@@ -24,6 +28,10 @@ export function Disconnect() {
 
 export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
+}
+
+export function GetLogs() {
+  return window['go']['main']['App']['GetLogs']();
 }
 
 export function GetProfiles() {

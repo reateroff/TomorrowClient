@@ -47,11 +47,22 @@ export interface AppInfo {
 }
 
 export interface AppSettings {
+  // Connection
   core: Core;
   activeProfileId: string;
   routingMode: RoutingMode;
-  autoConnect: boolean;
   dns: string;
+  tunName: string;
+  stack: string; // "gvisor" | "system"
+  mtu: number;
+  // Application
+  autoConnect: boolean;
+  launchAtStartup: boolean;
+  // Appearance
+  theme: string; // preset id
+  accent: string; // palette id
+  font: string; // font id
+  radius: string; // rounding id
 }
 
 export interface Stats {

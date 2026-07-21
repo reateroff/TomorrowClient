@@ -11,10 +11,12 @@ import (
 
 	"TomorrowClient/internal/link"
 	"TomorrowClient/internal/model"
+	"TomorrowClient/internal/singbox"
 	"TomorrowClient/internal/startup"
 	"TomorrowClient/internal/store"
 	"TomorrowClient/internal/sub"
 	"TomorrowClient/internal/vpn"
+	"TomorrowClient/internal/xray"
 )
 
 // Version is the client version shown on the About screen.
@@ -216,6 +218,33 @@ func (a *App) GetLogs() []string {
 // ClearLogs empties the in-memory core log buffer.
 func (a *App) ClearLogs() {
 	a.engine.ClearLogs()
+}
+
+// PreviewConfig builds and returns the core config JSON for the active profile
+// and current settings. Used by the developer tools to inspect what the app
+// actually hands to the running core.
+func (a *App) PreviewConfig() (string, error) {
+	s := a.store.Settings()
+	if s.ActiveProfileID == "" {
+		return "", fmt.Errorf("профиль не выбран")
+	}
+	p, ok := a.store.Profile(s.ActiveProfileID)
+	if !ok {
+		return "", fmt.Errorf("профиль не найден")
+	}
+	var (
+		b   []byte
+		err error
+	)
+	if s.Core == model.CoreXray {
+		b, err = xray.Build(p, s)
+	} else {
+		b, err = singbox.Build(p, s)
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // --- Connection ---

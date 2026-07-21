@@ -54,6 +54,10 @@ export function ImportLink(arg1) {
   return window['go']['main']['App']['ImportLink'](arg1);
 }
 
+export function PreviewConfig() {
+  return window['go']['main']['App']['PreviewConfig']();
+}
+
 export function SaveProfile(arg1) {
   return window['go']['main']['App']['SaveProfile'](arg1);
 }

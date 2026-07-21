@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Palette,
-  AppWindow,
+  Monitor,
   Network,
   ScrollText,
+  Bug,
   Info,
   Cpu,
   Route,
@@ -13,20 +14,75 @@ import {
   Check,
   Copy,
   Trash2,
+  ChevronRight,
+  ArrowLeft,
+  Settings2,
+  FileJson,
+  Lock,
 } from "lucide-react";
 import type { AppInfo, AppSettings, Core, RoutingMode } from "../types";
 import { THEME_PRESETS, ACCENTS, FONTS, RADII } from "../theme";
-import { GetLogs, ClearLogs } from "../../wailsjs/go/main/App";
+import {
+  GetLogs,
+  ClearLogs,
+  PreviewConfig,
+} from "../../wailsjs/go/main/App";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 
-type TabKey = "appearance" | "application" | "connection" | "logs" | "about";
+type TabKey =
+  | "appearance"
+  | "application"
+  | "connection"
+  | "logs"
+  | "developer"
+  | "about";
 
-const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: "appearance", label: "Внешний вид", icon: <Palette size={16} /> },
-  { key: "application", label: "Приложение", icon: <AppWindow size={16} /> },
-  { key: "connection", label: "Соединение", icon: <Network size={16} /> },
-  { key: "logs", label: "Логи", icon: <ScrollText size={16} /> },
-  { key: "about", label: "О приложении", icon: <Info size={16} /> },
+interface MenuItem {
+  key: TabKey;
+  label: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  dev?: boolean;
+}
+
+const MENU: MenuItem[] = [
+  {
+    key: "appearance",
+    label: "Внешний вид",
+    subtitle: "Тема, шрифт, скругление",
+    icon: <Palette size={18} />,
+  },
+  {
+    key: "application",
+    label: "Приложение",
+    subtitle: "Автозапуск и поведение",
+    icon: <Monitor size={18} />,
+  },
+  {
+    key: "connection",
+    label: "Соединение",
+    subtitle: "Ядро, TUN, DNS, MTU",
+    icon: <Network size={18} />,
+  },
+  {
+    key: "logs",
+    label: "Логи",
+    subtitle: "Журнал работы ядра",
+    icon: <ScrollText size={18} />,
+  },
+  {
+    key: "developer",
+    label: "Для разработчиков",
+    subtitle: "Просмотр конфига и отладка",
+    icon: <Bug size={18} />,
+    dev: true,
+  },
+  {
+    key: "about",
+    label: "О приложении",
+    subtitle: "Версия и информация",
+    icon: <Info size={18} />,
+  },
 ];
 
 interface Props {
@@ -36,59 +92,93 @@ interface Props {
   onChange: (s: AppSettings) => void;
 }
 
-// The settings screen is a vertical tab layout: a left rail of sections and a
-// scrollable panel on the right.
+// The settings screen is a drill-down menu: a list of section rows that open a
+// dedicated page with a back button. This mirrors a mobile-style settings flow.
 export default function SettingsView({
   settings,
   appInfo,
   disabled,
   onChange,
 }: Props) {
-  const [tab, setTab] = useState<TabKey>("appearance");
+  const [tab, setTab] = useState<TabKey | null>(null);
   const set = (patch: Partial<AppSettings>) =>
     onChange({ ...settings, ...patch });
 
-  return (
-    <div className="animate-fade-up flex h-full min-h-0">
-      {/* Vertical tab rail */}
-      <nav className="flex w-52 shrink-0 flex-col gap-1 border-r border-border p-3">
-        <div className="px-2 pb-2 pt-1">
-          <h1 className="text-sm font-medium text-text">Настройки</h1>
-        </div>
-        {TABS.map((t) => {
-          const active = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition ${
-                active
-                  ? "bg-surface-2 text-text"
-                  : "text-text-muted hover:bg-surface/60 hover:text-text"
-              }`}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
-              )}
-              <span className={active ? "text-accent" : ""}>{t.icon}</span>
-              {t.label}
-            </button>
-          );
-        })}
-      </nav>
+  const active = MENU.find((m) => m.key === tab);
 
-      {/* Panel */}
-      <div className="min-w-0 flex-1 overflow-y-auto p-6">
-        {tab === "appearance" && (
-          <Appearance settings={settings} set={set} />
+  // --- Menu (root) ---
+  if (!tab || !active) {
+    return (
+      <div className="animate-fade-up flex h-full flex-col overflow-y-auto p-6">
+        <div className="mb-5 flex items-center gap-2.5">
+          <Settings2 size={20} className="text-accent" />
+          <h1 className="text-lg font-semibold text-text">Настройки</h1>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {MENU.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setTab(m.key)}
+              className="group flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3.5 text-left transition hover:border-border hover:bg-surface-2"
+            >
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-surface-2 text-text-muted transition group-hover:text-accent">
+                {m.icon}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-text">
+                    {m.label}
+                  </span>
+                  {m.dev && (
+                    <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                      DEV
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-text-faint">{m.subtitle}</div>
+              </div>
+              <ChevronRight
+                size={18}
+                className="shrink-0 text-text-faint transition group-hover:text-text-muted"
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Section page ---
+  return (
+    <div className="animate-fade-up flex h-full min-h-0 flex-col p-6">
+      <div className="mb-6 flex items-center gap-3">
+        <button
+          onClick={() => setTab(null)}
+          className="grid h-8 w-8 place-items-center rounded-lg text-text-muted transition hover:bg-surface-2 hover:text-text"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <span className="text-accent">{active.icon}</span>
+        <h1 className="text-lg font-semibold text-text">{active.label}</h1>
+        {active.dev && (
+          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+            DEV
+          </span>
         )}
-        {tab === "application" && (
-          <Application settings={settings} set={set} />
-        )}
+      </div>
+
+      <div
+        className={`min-h-0 flex-1 ${
+          tab === "logs" ? "flex flex-col" : "overflow-y-auto"
+        }`}
+      >
+        {tab === "appearance" && <Appearance settings={settings} set={set} />}
+        {tab === "application" && <Application settings={settings} set={set} />}
         {tab === "connection" && (
           <Connection settings={settings} set={set} disabled={disabled} />
         )}
         {tab === "logs" && <Logs />}
+        {tab === "developer" && <Developer settings={settings} />}
         {tab === "about" && <About appInfo={appInfo} />}
       </div>
     </div>
@@ -102,11 +192,6 @@ type SetFn = (patch: Partial<AppSettings>) => void;
 function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
     <div className="flex max-w-2xl flex-col gap-7">
-      <PanelHead
-        title="Внешний вид"
-        subtitle="тема, акцент, шрифт и скругление"
-      />
-
       <Section icon={<Palette size={16} />} title="Тема">
         <div className="grid grid-cols-3 gap-3">
           {THEME_PRESETS.map((p) => (
@@ -162,7 +247,7 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
         </div>
       </Section>
 
-      <Section icon={<AppWindow size={16} />} title="Шрифт">
+      <Section icon={<Monitor size={16} />} title="Шрифт">
         <div className="grid grid-cols-3 gap-3">
           {FONTS.map((f) => (
             <button
@@ -212,7 +297,6 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
 function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
     <div className="flex max-w-2xl flex-col gap-7">
-      <PanelHead title="Приложение" subtitle="поведение при запуске" />
       <Section icon={<Rocket size={16} />} title="Запуск">
         <div className="flex flex-col gap-3">
           <Switch
@@ -246,12 +330,12 @@ function Connection({
 }) {
   return (
     <div className="flex max-w-2xl flex-col gap-7">
-      <PanelHead
-        title="Соединение"
-        subtitle={
-          disabled ? "заблокировано во время соединения" : "ядро и параметры туннеля"
-        }
-      />
+      {disabled && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs text-text-muted">
+          <Lock size={14} className="text-text-faint" />
+          Параметры соединения заблокированы, пока туннель активен.
+        </div>
+      )}
 
       <Section icon={<Cpu size={16} />} title="Ядро">
         <div className="grid grid-cols-2 gap-3">
@@ -378,25 +462,22 @@ function Logs() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <PanelHead title="Логи" subtitle="вывод активного ядра" />
-        <div className="flex gap-2">
-          <button
-            onClick={copyAll}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-muted transition hover:bg-surface-2 hover:text-text"
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? "Скопировано" : "Копировать"}
-          </button>
-          <button
-            onClick={clear}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-muted transition hover:bg-surface-2 hover:text-danger"
-          >
-            <Trash2 size={13} />
-            Очистить
-          </button>
-        </div>
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={copyAll}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-muted transition hover:bg-surface-2 hover:text-text"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "Скопировано" : "Копировать"}
+        </button>
+        <button
+          onClick={clear}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-muted transition hover:bg-surface-2 hover:text-danger"
+        >
+          <Trash2 size={13} />
+          Очистить
+        </button>
       </div>
       <div
         ref={boxRef}
@@ -408,7 +489,10 @@ function Logs() {
           </span>
         ) : (
           lines.map((l, i) => (
-            <div key={i} className="whitespace-pre-wrap break-all text-text-muted">
+            <div
+              key={i}
+              className="whitespace-pre-wrap break-all text-text-muted"
+            >
               {l}
             </div>
           ))
@@ -418,12 +502,75 @@ function Logs() {
   );
 }
 
+/* --------------------------------- Developer --------------------------------- */
+
+function Developer({ settings }: { settings: AppSettings }) {
+  const [config, setConfig] = useState<string>("");
+  const [err, setErr] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    setErr("");
+    try {
+      const c = await PreviewConfig();
+      setConfig(c as string);
+    } catch (e: any) {
+      setConfig("");
+      setErr(String(e?.message ?? e));
+    }
+  };
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(config);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="flex max-w-2xl flex-col gap-7">
+      <Section icon={<FileJson size={16} />} title="Конфигурация ядра">
+        <p className="text-xs leading-relaxed text-text-muted">
+          Сгенерированный JSON, который передаётся активному ядру (
+          <span className="font-mono text-text">{settings.core}</span>) для
+          выбранного профиля.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={load}
+            className="rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
+          >
+            Показать конфиг
+          </button>
+          {config && (
+            <button
+              onClick={copy}
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2 hover:text-text"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? "Скопировано" : "Копировать"}
+            </button>
+          )}
+        </div>
+        {err && (
+          <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {err}
+          </div>
+        )}
+        {config && (
+          <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-text-muted">
+            {config}
+          </pre>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 /* ----------------------------------- About ----------------------------------- */
 
 function About({ appInfo }: { appInfo: AppInfo | null }) {
   return (
     <div className="flex max-w-2xl flex-col gap-7">
-      <PanelHead title="О приложении" subtitle="версия и лицензия" />
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
         <div className="flex items-center gap-4 border-b border-border p-5">
           <div className="grid h-14 w-14 place-items-center rounded-lg bg-accent/15 font-mono text-lg font-semibold text-accent">
@@ -466,15 +613,6 @@ function About({ appInfo }: { appInfo: AppInfo | null }) {
 
 const inputCls =
   "w-full rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 disabled:opacity-60";
-
-function PanelHead({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div>
-      <h2 className="text-base font-medium text-text">{title}</h2>
-      <p className="font-mono text-xs text-text-faint">{subtitle}</p>
-    </div>
-  );
-}
 
 function Section({
   icon,

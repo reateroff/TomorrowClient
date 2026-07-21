@@ -97,6 +97,14 @@ type Subscription struct {
 	UpdatedAt int64 `json:"updatedAt"`
 	// Count is how many profiles the last fetch produced.
 	Count int `json:"count"`
+
+	// Traffic and expiry parsed from the provider's Subscription-Userinfo
+	// header. All zero means the provider reported nothing — the UI then shows
+	// the values as unlimited (∞).
+	Upload   int64 `json:"upload"`   // bytes used, upstream
+	Download int64 `json:"download"` // bytes used, downstream
+	Total    int64 `json:"total"`    // total quota in bytes, 0 = unlimited
+	Expire   int64 `json:"expire"`   // unix seconds, 0 = never expires
 }
 
 // RoutingRule is one user-defined routing entry: match traffic by domain, IP

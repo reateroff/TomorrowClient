@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,6 +114,24 @@ func (a *App) DeleteProfile(id string) error {
 	return a.store.DeleteProfile(id)
 }
 
+// PingProfile TCP-dials a profile's server and returns the round-trip latency
+// in milliseconds, or -1 if the server is unreachable within the timeout. This
+// is a reachability check of the endpoint, not a full proxy handshake.
+func (a *App) PingProfile(id string) int {
+	p, ok := a.store.Profile(id)
+	if !ok || p.Address == "" || p.Port == 0 {
+		return -1
+	}
+	addr := net.JoinHostPort(p.Address, strconv.Itoa(p.Port))
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return -1
+	}
+	_ = conn.Close()
+	return int(time.Since(start).Milliseconds())
+}
+
 // --- Subscriptions ---
 
 // GetSubscriptions returns all saved subscriptions.
@@ -136,7 +156,7 @@ func (a *App) AddSubscription(name, url string) (model.Subscription, error) {
 		s.Name = subNameFromURL(url)
 	}
 
-	profiles, err := sub.Fetch(url, s.ID)
+	profiles, info, err := sub.Fetch(url, s.ID)
 	if err != nil {
 		return model.Subscription{}, err
 	}
@@ -145,6 +165,7 @@ func (a *App) AddSubscription(name, url string) (model.Subscription, error) {
 	}
 	s.Count = len(profiles)
 	s.UpdatedAt = time.Now().UnixMilli()
+	applyUserinfo(&s, info)
 	if err := a.store.UpsertSubscription(s); err != nil {
 		return model.Subscription{}, err
 	}
@@ -158,7 +179,7 @@ func (a *App) UpdateSubscription(id string) (model.Subscription, error) {
 	if !ok {
 		return model.Subscription{}, fmt.Errorf("subscription not found")
 	}
-	profiles, err := sub.Fetch(s.URL, s.ID)
+	profiles, info, err := sub.Fetch(s.URL, s.ID)
 	if err != nil {
 		return model.Subscription{}, err
 	}
@@ -167,10 +188,19 @@ func (a *App) UpdateSubscription(id string) (model.Subscription, error) {
 	}
 	s.Count = len(profiles)
 	s.UpdatedAt = time.Now().UnixMilli()
+	applyUserinfo(&s, info)
 	if err := a.store.UpsertSubscription(s); err != nil {
 		return model.Subscription{}, err
 	}
 	return s, nil
+}
+
+// applyUserinfo copies traffic/expiry metadata from a fetch into a subscription.
+func applyUserinfo(s *model.Subscription, info sub.Userinfo) {
+	s.Upload = info.Upload
+	s.Download = info.Download
+	s.Total = info.Total
+	s.Expire = info.Expire
 }
 
 // DeleteSubscription removes a subscription and all servers it imported.

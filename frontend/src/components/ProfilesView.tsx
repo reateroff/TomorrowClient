@@ -8,8 +8,11 @@ import {
   Loader2,
   Link2,
   Check,
+  Gauge,
+  CalendarClock,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
+import { formatTraffic, formatExpiry, subDomain } from "../format";
 import AddModal from "./AddModal";
 
 interface Props {
@@ -101,7 +104,9 @@ export default function ProfilesView({
                 key={sub.id}
                 icon={<Rss size={16} />}
                 name={sub.name}
+                domain={subDomain(sub.url)}
                 count={bySub(sub.id).length}
+                sub={sub}
                 selected={selectedGroup === sub.id}
                 onSelect={() => onSelectGroup(sub.id)}
                 updating={updating === sub.id}
@@ -125,11 +130,14 @@ export default function ProfilesView({
 }
 
 // A subscription (or manual group) card. Clicking it selects the group; the
-// selected one shows an "активен" badge.
+// selected one shows an "активен" badge. Subscriptions also show their domain,
+// used/total traffic and expiry (∞ when the provider reports no limit).
 function GroupCard({
   icon,
   name,
+  domain,
   count,
+  sub,
   selected,
   onSelect,
   updating,
@@ -138,7 +146,9 @@ function GroupCard({
 }: {
   icon: React.ReactNode;
   name: string;
+  domain?: string;
   count: number;
+  sub?: Subscription;
   selected: boolean;
   onSelect: () => void;
   updating?: boolean;
@@ -165,9 +175,28 @@ function GroupCard({
           {icon}
         </span>
         <div className="min-w-0">
-          <div className="truncate text-sm text-text">{name}</div>
-          <div className="font-mono text-xs text-text-faint">
-            {count} сервер(ов)
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm text-text">{name}</span>
+            {domain && (
+              <span className="truncate font-mono text-xs text-text-faint">
+                {domain}
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-text-faint">
+            <span>{count} сервер(ов)</span>
+            {sub && (
+              <>
+                <span className="inline-flex items-center gap-1">
+                  <Gauge size={11} />
+                  {formatTraffic(sub.upload, sub.download, sub.total)}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <CalendarClock size={11} />
+                  {formatExpiry(sub.expire)}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </button>

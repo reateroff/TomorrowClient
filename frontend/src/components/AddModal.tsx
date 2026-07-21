@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { X, Link2, Rss, Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { X, Loader2, Link2, Rss } from "lucide-react";
 
 interface Props {
   onClose: () => void;
@@ -7,27 +7,57 @@ interface Props {
   onAddSub: (name: string, url: string) => Promise<void>;
 }
 
-type Tab = "link" | "sub";
+// Kind of the pasted text, decided automatically from its content.
+type Kind = "link" | "sub" | "empty" | "unknown";
 
-// Modal to add servers either from a single share link or a subscription URL.
+const LINK_SCHEMES = [
+  "vless://",
+  "vmess://",
+  "trojan://",
+  "ss://",
+  "hysteria2://",
+  "hy2://",
+  "hysteria://",
+  "hy://",
+  "tuic://",
+];
+
+// detectKind decides whether the input is a share link or a subscription URL.
+// Share-link schemes win; anything http(s) is treated as a subscription.
+function detectKind(text: string): Kind {
+  const t = text.trim().toLowerCase();
+  if (!t) return "empty";
+  if (LINK_SCHEMES.some((s) => t.startsWith(s))) return "link";
+  if (t.startsWith("http://") || t.startsWith("https://")) return "sub";
+  return "unknown";
+}
+
+// Modal to add servers. A single field auto-detects a share link vs a
+// subscription URL, so the user never picks a type manually. An optional name
+// is used only for subscriptions.
 export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
-  const [tab, setTab] = useState<Tab>("link");
-  const [raw, setRaw] = useState("");
-  const [subName, setSubName] = useState("");
-  const [subUrl, setSubUrl] = useState("");
+  const [text, setText] = useState("");
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  const kind = useMemo(() => detectKind(text), [text]);
+  const canSubmit = kind === "link" || kind === "sub";
+
   const submit = async () => {
     setErr("");
+    const value = text.trim();
+    if (kind === "empty") return;
+    if (kind === "unknown") {
+      setErr("Не распознан формат: вставьте ссылку vless:// … или адрес подписки https://…");
+      return;
+    }
     setBusy(true);
     try {
-      if (tab === "link") {
-        if (!raw.trim()) return;
-        await onImportLink(raw.trim());
+      if (kind === "link") {
+        await onImportLink(value);
       } else {
-        if (!subUrl.trim()) return;
-        await onAddSub(subName.trim(), subUrl.trim());
+        await onAddSub(name.trim(), value);
       }
       onClose();
     } catch (e: any) {
@@ -36,8 +66,6 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
       setBusy(false);
     }
   };
-
-  const canSubmit = tab === "link" ? !!raw.trim() : !!subUrl.trim();
 
   return (
     <div
@@ -52,56 +80,43 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
           <h2 className="text-sm font-medium text-text">Добавить серверы</h2>
           <button
             onClick={onClose}
-            className="text-text-faint transition hover:text-text"
+            className="no-drag text-text-faint transition hover:text-text"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="mb-4 flex gap-1 rounded-lg border border-border bg-bg p-1">
-          <TabButton
-            active={tab === "link"}
-            onClick={() => setTab("link")}
-            icon={<Link2 size={14} />}
-            label="По ссылке"
-          />
-          <TabButton
-            active={tab === "sub"}
-            onClick={() => setTab("sub")}
-            icon={<Rss size={14} />}
-            label="Подписка"
-          />
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Вставьте ссылку (vless://, vmess://, hysteria2://, …) или адрес подписки https://…"
+          rows={4}
+          autoFocus
+          className="w-full resize-none rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-xs text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
+        />
+
+        {/* Live detection hint */}
+        <div className="mt-2 h-4 text-xs">
+          {kind === "link" && (
+            <span className="inline-flex items-center gap-1.5 text-ok">
+              <Link2 size={12} /> Определено: ссылка на сервер
+            </span>
+          )}
+          {kind === "sub" && (
+            <span className="inline-flex items-center gap-1.5 text-accent">
+              <Rss size={12} /> Определено: подписка
+            </span>
+          )}
         </div>
 
-        {tab === "link" ? (
-          <textarea
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            placeholder="vless://…  vmess://…  trojan://…  ss://…"
-            rows={4}
-            autoFocus
-            className="w-full resize-none rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-xs text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
+        {/* Optional name only makes sense for a subscription. */}
+        {kind === "sub" && (
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Название подписки (необязательно)"
+            className="mt-2 w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
           />
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            <input
-              value={subUrl}
-              onChange={(e) => setSubUrl(e.target.value)}
-              placeholder="https://example.com/sub"
-              autoFocus
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-xs text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
-            />
-            <input
-              value={subName}
-              onChange={(e) => setSubName(e.target.value)}
-              placeholder="Название (необязательно)"
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
-            />
-            <p className="text-xs text-text-faint">
-              Загрузит список серверов и будет обновляться по кнопке.
-            </p>
-          </div>
         )}
 
         {err && <div className="mt-2 text-xs text-danger">{err}</div>}
@@ -109,44 +124,20 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg border border-border px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2"
+            className="no-drag rounded-lg border border-border px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2"
           >
             Отмена
           </button>
           <button
             onClick={submit}
             disabled={busy || !canSubmit}
-            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
+            className="no-drag flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
           >
             {busy && <Loader2 size={14} className="animate-spin" />}
-            {tab === "link" ? "Добавить" : "Загрузить"}
+            {kind === "sub" ? "Загрузить" : "Добавить"}
           </button>
         </div>
       </div>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition ${
-        active ? "bg-surface-2 text-text" : "text-text-muted hover:text-text"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

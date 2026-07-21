@@ -54,6 +54,7 @@
   --color-accent: #7c8cff;      /* soft indigo — the single brand accent */
   --color-accent-soft: #a5b0ff;
   --color-ok: #5bd6a0;
+  --color-amber: #e0b354;
   --color-danger: #ff6b6b;
 
   --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
@@ -83,17 +84,18 @@ body {
   overflow: hidden;
 }
 
-/* Custom, unobtrusive scrollbar */
+/* Custom, near-invisible thin scrollbar flush to the edge. The thumb stays
+   faint and only firms up slightly on hover, so it never competes with content. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 3px;
+  height: 3px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-text-faint) 40%, transparent);
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-surface-2);
+  background: color-mix(in srgb, var(--color-text-faint) 70%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;

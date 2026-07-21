@@ -6,6 +6,7 @@ import ProfilesView from "./components/ProfilesView";
 import ConfigsView from "./components/ConfigsView";
 import RoutingView from "./components/RoutingView";
 import SettingsView from "./components/SettingsView";
+import Toasts, { push } from "./components/Toasts";
 import type {
   AppInfo,
   AppSettings,
@@ -79,7 +80,19 @@ export default function App() {
     GetStatus().then((s) => setStatus(s as Status));
     GetAppInfo().then((i) => setAppInfo(i as AppInfo));
 
-    const off = EventsOn("vpn:status", (s: Status) => setStatus(s));
+    let prev: Status["state"] | null = null;
+    const off = EventsOn("vpn:status", (s: Status) => {
+      setStatus(s);
+      // Notify only on real transitions, not on every stats tick.
+      if (s.state !== prev) {
+        if (s.state === "connected") push("Подключено", "ok");
+        else if (s.state === "disconnected" && prev === "connected")
+          push("Отключено", "info");
+        else if (s.state === "error")
+          push(s.error ? `Ошибка: ${s.error}` : "Ошибка подключения", "error");
+        prev = s.state;
+      }
+    });
     return () => off();
   }, []);
 
@@ -120,16 +133,27 @@ export default function App() {
 
   const handleAddSub = useCallback(
     async (name: string, url: string) => {
-      await AddSubscription(name, url);
-      await refreshProfiles();
+      try {
+        const s = (await AddSubscription(name, url)) as Subscription;
+        await refreshProfiles();
+        push(`Подписка «${s.name}» добавлена: ${s.count} серв.`, "ok");
+      } catch (e) {
+        push(`Не удалось добавить подписку: ${String(e)}`, "error");
+        throw e;
+      }
     },
     [refreshProfiles]
   );
 
   const handleUpdateSub = useCallback(
     async (id: string) => {
-      await UpdateSubscription(id);
-      await refreshProfiles();
+      try {
+        const s = (await UpdateSubscription(id)) as Subscription;
+        await refreshProfiles();
+        push(`Подписка «${s.name}» обновлена: ${s.count} серв.`, "ok");
+      } catch (e) {
+        push(`Ошибка обновления: ${String(e)}`, "error");
+      }
     },
     [refreshProfiles]
   );
@@ -138,6 +162,7 @@ export default function App() {
     async (id: string) => {
       await DeleteSubscription(id);
       await refreshProfiles();
+      push("Подписка удалена", "info");
     },
     [refreshProfiles]
   );
@@ -168,11 +193,11 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-bg text-text">
+    <div className="relative flex h-screen flex-col bg-bg text-text">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <Sidebar active={view} onSelect={setView} />
-        <main className="min-w-0 flex-1">
+        <main className="relative min-w-0 flex-1">
           {view === "connection" && (
             <ConnectionView
               status={status}
@@ -201,8 +226,6 @@ export default function App() {
               selectedGroup={selectedGroup}
               activeId={settings.activeProfileId}
               connected={connected}
-              onSelectGroup={setSelectedGroup}
-              onDelete={handleDelete}
               onActivate={handleActivate}
             />
           )}
@@ -221,7 +244,8 @@ export default function App() {
               onChange={handleSettings}
             />
           )}
-        </main>
+        <Toasts />
+      </main>
       </div>
     </div>
   );

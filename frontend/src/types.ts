@@ -51,6 +51,10 @@ export interface Subscription {
   url: string;
   updatedAt: number;
   count: number;
+  upload: number;
+  download: number;
+  total: number; // 0 = unlimited
+  expire: number; // unix seconds, 0 = never
 }
 
 export interface AppInfo {

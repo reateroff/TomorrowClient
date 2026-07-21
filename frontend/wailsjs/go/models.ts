@@ -224,6 +224,10 @@ export namespace model {
 	    url: string;
 	    updatedAt: number;
 	    count: number;
+	    upload: number;
+	    download: number;
+	    total: number;
+	    expire: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Subscription(source);
@@ -236,6 +240,10 @@ export namespace model {
 	        this.url = source["url"];
 	        this.updatedAt = source["updatedAt"];
 	        this.count = source["count"];
+	        this.upload = source["upload"];
+	        this.download = source["download"];
+	        this.total = source["total"];
+	        this.expire = source["expire"];
 	    }
 	}
 

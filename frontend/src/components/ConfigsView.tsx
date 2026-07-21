@@ -1,13 +1,16 @@
+import { useState } from "react";
 import {
-  Trash2,
   CheckCircle2,
   Zap,
   Globe,
   Server,
+  Activity,
+  Loader2,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
 import { countryCodeFor } from "../flags";
 import { describeChain } from "../proto";
+import { PingProfile } from "../../wailsjs/go/main/App";
 import * as Flags from "country-flag-icons/react/3x2";
 
 interface Props {
@@ -16,23 +19,26 @@ interface Props {
   selectedGroup: string; // "manual" or a subscription id
   activeId: string;
   connected: boolean;
-  onSelectGroup: (groupId: string) => void;
-  onDelete: (id: string) => void;
   onActivate: (id: string) => void;
 }
 
+// Latency in ms per profile id: >=0 reachable, -1 unreachable, undefined = not
+// yet tested.
+type PingMap = Record<string, number>;
+
 // Shows the locations (servers) of the group picked on the Profiles tab, with a
-// small group switcher on top so you can jump between subscriptions here too.
+// ping button that TCP-tests every server's reachability.
 export default function ConfigsView({
   profiles,
   subscriptions,
   selectedGroup,
   activeId,
   connected,
-  onSelectGroup,
-  onDelete,
   onActivate,
 }: Props) {
+  const [pings, setPings] = useState<PingMap>({});
+  const [pinging, setPinging] = useState(false);
+
   const manual = profiles.filter((p) => !p.subId);
   const bySub = (id: string) => profiles.filter((p) => p.subId === id);
 
@@ -55,13 +61,51 @@ export default function ConfigsView({
 
   const empty = profiles.length === 0;
 
+  // pingAll tests every server in the current group concurrently and stores the
+  // latency (or -1) per profile as results arrive.
+  const pingAll = async () => {
+    if (pinging || servers.length === 0) return;
+    setPinging(true);
+    // Clear previous results for this group so stale values don't linger.
+    setPings((prev) => {
+      const next = { ...prev };
+      servers.forEach((p) => delete next[p.id]);
+      return next;
+    });
+    await Promise.all(
+      servers.map(async (p) => {
+        const ms = await PingProfile(p.id);
+        setPings((prev) => ({ ...prev, [p.id]: ms }));
+      })
+    );
+    setPinging(false);
+  };
+
   return (
     <div className="animate-fade-up flex h-full flex-col p-6">
-      <div className="mb-5">
-        <h1 className="text-base font-medium text-text">Конфигурации</h1>
-        <p className="font-mono text-xs text-text-faint">
-          {groupName ? `${groupName} · ${servers.length} локац(ий)` : "выбор локации"}
-        </p>
+      <div className="mb-5 flex items-start justify-between">
+        <div>
+          <h1 className="text-base font-medium text-text">Конфигурации</h1>
+          <p className="font-mono text-xs text-text-faint">
+            {groupName
+              ? `${groupName} · ${servers.length} локац(ий)`
+              : "выбор локации"}
+          </p>
+        </div>
+        {servers.length > 0 && (
+          <button
+            onClick={pingAll}
+            disabled={pinging}
+            className="no-drag flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
+          >
+            {pinging ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Activity size={15} />
+            )}
+            Пинг
+          </button>
+        )}
       </div>
 
       {empty ? (
@@ -73,65 +117,47 @@ export default function ConfigsView({
             Сначала добавьте профиль во вкладке «Профили».
           </p>
         </div>
+      ) : servers.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <Server size={32} className="text-text-faint" />
+          <p className="text-sm text-text-muted">
+            В этой группе нет серверов.
+            <br />
+            Выберите профиль во вкладке «Профили».
+          </p>
+        </div>
       ) : (
-        <>
-          {/* Group switcher */}
-          {groups.length > 1 && (
-            <div className="mb-4 flex flex-wrap gap-2">
-              {groups.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => onSelectGroup(g.id)}
-                  className={`no-drag rounded-lg border px-3 py-1.5 text-xs transition ${
-                    g.id === groupId
-                      ? "border-accent/60 bg-surface-2 text-text"
-                      : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
-                  }`}
-                >
-                  {g.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {servers.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-              <Server size={32} className="text-text-faint" />
-              <p className="text-sm text-text-muted">В этой группе нет серверов.</p>
-            </div>
-          ) : (
-            <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
-              {servers.map((p) => (
-                <LocationRow
-                  key={p.id}
-                  profile={p}
-                  active={p.id === activeId}
-                  connected={connected}
-                  onActivate={onActivate}
-                  onDelete={onDelete}
-                />
-              ))}
-            </div>
-          )}
-        </>
+        <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
+          {servers.map((p) => (
+            <LocationRow
+              key={p.id}
+              profile={p}
+              active={p.id === activeId}
+              connected={connected}
+              ping={pings[p.id]}
+              onActivate={onActivate}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
-// A single server / location row with an SVG country flag on the left.
+// A single server / location row with an SVG country flag on the left and an
+// optional latency badge on the right.
 function LocationRow({
   profile: p,
   active,
   connected,
+  ping,
   onActivate,
-  onDelete,
 }: {
   profile: Profile;
   active: boolean;
   connected: boolean;
+  ping?: number;
   onActivate: (id: string) => void;
-  onDelete: (id: string) => void;
 }) {
   const cc = countryCodeFor(p.name);
   const Flag = cc ? (Flags as Record<string, React.ComponentType<any>>)[cc] : null;
@@ -168,20 +194,32 @@ function LocationRow({
         </div>
       </button>
 
+      {ping !== undefined && <PingBadge ms={ping} />}
+
       {active && connected && (
         <span className="flex items-center gap-1 rounded-md bg-ok/15 px-2 py-1 font-mono text-[10px] text-ok">
           <Zap size={11} />
           активен
         </span>
       )}
-
-      <button
-        onClick={() => onDelete(p.id)}
-        className="no-drag rounded-md p-1.5 text-text-faint opacity-0 transition hover:bg-danger/15 hover:text-danger group-hover:opacity-100"
-        aria-label="Удалить"
-      >
-        <Trash2 size={15} />
-      </button>
     </div>
+  );
+}
+
+// PingBadge colours the latency: green fast, amber slow, red unreachable.
+function PingBadge({ ms }: { ms: number }) {
+  if (ms < 0) {
+    return (
+      <span className="shrink-0 rounded-md bg-danger/15 px-2 py-1 font-mono text-[10px] text-danger">
+        —
+      </span>
+    );
+  }
+  const tone =
+    ms < 150 ? "text-ok bg-ok/15" : ms < 400 ? "text-amber bg-amber/15" : "text-danger bg-danger/15";
+  return (
+    <span className={`shrink-0 rounded-md px-2 py-1 font-mono text-[10px] ${tone}`}>
+      {ms} мс
+    </span>
   );
 }

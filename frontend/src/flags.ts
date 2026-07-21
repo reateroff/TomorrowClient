@@ -67,6 +67,13 @@ const CODES = new Set(
   ])
 );
 
+export function stripCountryPrefix(name: string): string {
+  let s = name.replace(/^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u, "").trimStart();
+  const m = s.match(/^([A-Z]{2})[\s\-_.]+(.+)$/);
+  if (m && CODES.has(m[1])) s = m[2];
+  return s.trim();
+}
+
 // countryCodeFor returns an ISO alpha-2 code for a server name, or "" when none
 // is detected.
 export function countryCodeFor(name: string): string {

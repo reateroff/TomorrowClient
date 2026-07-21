@@ -52,10 +52,12 @@ const defaultSettings: AppSettings = {
   rules: [],
   autoConnect: false,
   launchAtStartup: false,
+  minimizeToTray: false,
   theme: "graphite",
   accent: "indigo",
   font: "inter",
   radius: "soft",
+  navPosition: "left",
 };
 
 export default function App() {
@@ -83,12 +85,9 @@ export default function App() {
     let prev: Status["state"] | null = null;
     const off = EventsOn("vpn:status", (s: Status) => {
       setStatus(s);
-      // Notify only on real transitions, not on every stats tick.
+      // Only surface errors — routine connect/disconnect is visible in the UI.
       if (s.state !== prev) {
-        if (s.state === "connected") push("Подключено", "ok");
-        else if (s.state === "disconnected" && prev === "connected")
-          push("Отключено", "info");
-        else if (s.state === "error")
+        if (s.state === "error")
           push(s.error ? `Ошибка: ${s.error}` : "Ошибка подключения", "error");
         prev = s.state;
       }
@@ -192,12 +191,18 @@ export default function App() {
     Disconnect();
   }, []);
 
+  const navTop = settings.navPosition === "top";
+
   return (
     <div className="relative flex h-screen flex-col bg-bg text-text">
-      <TitleBar />
-      <div className="flex min-h-0 flex-1">
-        <Sidebar active={view} onSelect={setView} />
-        <main className="relative min-w-0 flex-1">
+      <TitleBar minimizeToTray={settings.minimizeToTray} />
+      <div className={`flex min-h-0 flex-1 ${navTop ? "flex-col" : ""}`}>
+        <Sidebar
+          active={view}
+          position={navTop ? "top" : "left"}
+          onSelect={setView}
+        />
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {view === "connection" && (
             <ConnectionView
               status={status}
@@ -205,6 +210,11 @@ export default function App() {
               activeProfile={activeProfile}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
+              onOpenConfigs={() => {
+                if (activeProfile)
+                  setSelectedGroup(activeProfile.subId || "manual");
+                setView("configs");
+              }}
             />
           )}
           {view === "profiles" && (

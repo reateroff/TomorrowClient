@@ -89,7 +89,7 @@ export default function ProfilesView({
           <p className="mb-3 text-xs text-text-faint">
             Выберите профиль — его локации появятся во вкладке «Конфигурации».
           </p>
-          <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
+          <div className="-mr-6 flex flex-1 flex-col gap-2 overflow-y-auto pr-1.5">
             {manual.length > 0 && (
               <GroupCard
                 icon={<Link2 size={16} />}

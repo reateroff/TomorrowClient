@@ -37,6 +37,20 @@
   font-display: swap;
   src: url("./fonts/jetbrains-mono.woff2") format("woff2");
 }
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/onest.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/onest-500.ttf") format("truetype");
+}
 
 /* TomorrowClient design tokens — a calm, dark grey minimal palette.
    These are the defaults; theme.ts overrides them at runtime per user choice. */
@@ -84,24 +98,23 @@ body {
   overflow: hidden;
 }
 
-/* Custom, near-invisible thin scrollbar flush to the edge. The thumb stays
-   faint and only firms up slightly on hover, so it never competes with content. */
 ::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-text-faint) 40%, transparent);
-  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-text-faint) 45%, transparent);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-text-faint) 70%, transparent);
+  background: color-mix(in srgb, var(--color-text-faint) 75%, transparent);
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
-/* Draggable region for the frameless window title bar */
 .drag {
   --wails-draggable: drag;
 }

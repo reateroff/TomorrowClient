@@ -8,10 +8,10 @@ import {
   Loader2,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
-import { countryCodeFor } from "../flags";
 import { describeChain } from "../proto";
+import { stripCountryPrefix } from "../flags";
 import { PingProfile } from "../../wailsjs/go/main/App";
-import * as Flags from "country-flag-icons/react/3x2";
+import FlagChip from "./FlagChip";
 
 interface Props {
   profiles: Profile[];
@@ -127,7 +127,7 @@ export default function ConfigsView({
           </p>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
+        <div className="-mr-6 flex flex-1 flex-col gap-2 overflow-y-auto pr-1.5">
           {servers.map((p) => (
             <LocationRow
               key={p.id}
@@ -159,8 +159,6 @@ function LocationRow({
   ping?: number;
   onActivate: (id: string) => void;
 }) {
-  const cc = countryCodeFor(p.name);
-  const Flag = cc ? (Flags as Record<string, React.ComponentType<any>>)[cc] : null;
   return (
     <div
       className={`group flex items-center gap-3 rounded-lg border px-4 py-3 transition ${
@@ -175,15 +173,13 @@ function LocationRow({
       >
         {/* Flag chip */}
         <span className="grid h-9 w-12 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-bg">
-          {Flag ? (
-            <Flag className="h-full w-full object-cover" />
-          ) : (
-            <Globe size={16} className="text-text-faint" />
-          )}
+          <FlagChip name={p.name} />
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm text-text">{p.name}</span>
+            <span className="truncate text-sm text-text">
+              {stripCountryPrefix(p.name)}
+            </span>
             {active && (
               <CheckCircle2 size={14} className="shrink-0 text-accent" />
             )}

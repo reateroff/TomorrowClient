@@ -73,18 +73,17 @@ func route(s model.AppSettings) map[string]any {
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 	}
 
-	// User-defined overrides take priority over the mode defaults.
+	// User-defined overrides take priority over the defaults.
 	for _, r := range s.Rules {
 		if rule := userRule(r); rule != nil {
 			rules = append(rules, rule)
 		}
 	}
 
-	if s.RoutingMode == model.RoutingRules {
-		rules = append(rules,
-			map[string]any{"ip_is_private": true, "outbound": "direct"},
-		)
-	}
+	// Local/LAN traffic (loopback, private ranges) always goes direct.
+	rules = append(rules,
+		map[string]any{"ip_is_private": true, "outbound": "direct"},
+	)
 	return map[string]any{
 		"rules":                 rules,
 		"final":                 "proxy",

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/energye/systray"
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -27,9 +28,10 @@ const Version = "1.0.0"
 // App is the Wails-bound application object. Every exported method here is
 // callable from the React frontend.
 type App struct {
-	ctx    context.Context
-	store  *store.Store
-	engine *vpn.Engine
+	ctx     context.Context
+	store   *store.Store
+	engine  *vpn.Engine
+	mToggle *systray.MenuItem // tray "connect/disconnect" item, relabeled on status
 }
 
 // AppInfo is the metadata shown on the "About" screen.
@@ -64,11 +66,17 @@ func (a *App) startup(ctx context.Context) {
 	a.store = st
 
 	// The engine pushes status snapshots to the frontend over the
-	// "vpn:status" event, and each core log line over "vpn:log".
+	// "vpn:status" event, and each core log line over "vpn:log". The status
+	// callback also relabels the tray connect/disconnect item.
 	a.engine = vpn.New(
-		func(s model.Status) { runtime.EventsEmit(ctx, "vpn:status", s) },
+		func(s model.Status) {
+			runtime.EventsEmit(ctx, "vpn:status", s)
+			a.updateTrayStatus(s)
+		},
 		func(line string) { runtime.EventsEmit(ctx, "vpn:log", line) },
 	)
+
+	a.setupTray()
 
 	// Auto-connect to the last active profile if the user enabled it.
 	if s := a.store.Settings(); s.AutoConnect && s.ActiveProfileID != "" {
@@ -78,11 +86,13 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
-// shutdown makes sure the tunnel is torn down when the window closes.
+// shutdown makes sure the tunnel is torn down when the window closes, and the
+// tray icon is removed.
 func (a *App) shutdown(ctx context.Context) {
 	if a.engine != nil {
 		a.engine.Disconnect()
 	}
+	systray.Quit()
 }
 
 // --- Profiles ---

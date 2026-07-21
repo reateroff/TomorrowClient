@@ -11,11 +11,40 @@ const NAV: { key: ViewKey; label: string; icon: typeof Shield }[] = [
 
 interface Props {
   active: ViewKey;
+  position: "left" | "top";
   onSelect: (v: ViewKey) => void;
 }
 
-// Left navigation rail. The active item gets an accent left-bar.
-export default function Sidebar({ active, onSelect }: Props) {
+// Navigation tabs: a vertical rail on the left or a horizontal bar on top,
+// chosen in Settings → Внешний вид.
+export default function Sidebar({ active, position, onSelect }: Props) {
+  if (position === "top") {
+    return (
+      <nav className="flex shrink-0 items-center justify-center gap-1 border-b border-border bg-surface/40 px-3 py-2">
+        {NAV.map(({ key, label, icon: Icon }) => {
+          const isActive = active === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onSelect(key)}
+              className={`relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                isActive
+                  ? "bg-surface-2 text-text"
+                  : "text-text-muted hover:bg-surface-2/60 hover:text-text"
+              }`}
+            >
+              {isActive && (
+                <span className="absolute inset-x-3 -bottom-2 h-0.5 rounded-full bg-accent" />
+              )}
+              <Icon size={16} className={isActive ? "text-accent" : ""} />
+              {label}
+            </button>
+          );
+        })}
+      </nav>
+    );
+  }
+
   return (
     <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-surface/40">
       <nav className="flex flex-1 flex-col gap-1 p-3">

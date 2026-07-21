@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { CheckCircle2, AlertCircle, Info } from "lucide-react";
+import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
 
 export type ToastKind = "info" | "ok" | "error";
 
@@ -52,10 +52,17 @@ export default function Toasts() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="animate-fade-up flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 shadow-lg"
+          className="animate-fade-up flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-border bg-surface py-2.5 pl-3.5 pr-2 shadow-lg"
         >
           {ICON[t.kind]}
           <span className="truncate text-sm text-text">{t.message}</span>
+          <button
+            onClick={() => remove(t.id)}
+            className="no-drag pointer-events-auto ml-1 shrink-0 rounded p-1 text-text-faint transition hover:bg-surface-2 hover:text-text"
+            aria-label="Закрыть"
+          >
+            <X size={13} />
+          </button>
         </div>
       ))}
     </div>

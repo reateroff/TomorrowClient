@@ -29,6 +29,8 @@ export function GetSubscriptions():Promise<Array<model.Subscription>>;
 
 export function ImportLink(arg1:string):Promise<model.Profile>;
 
+export function ListProcesses():Promise<Array<string>>;
+
 export function PingProfile(arg1:string):Promise<number>;
 
 export function PreviewConfig():Promise<string>;

@@ -62,13 +62,12 @@ func routing(s model.AppSettings) map[string]any {
 		}
 	}
 
-	if s.RoutingMode == model.RoutingRules {
-		rules = append(rules, map[string]any{
-			"type":        "field",
-			"ip":          privateCIDRs,
-			"outboundTag": "direct",
-		})
-	}
+	// Local/LAN traffic (loopback, private ranges) always goes direct.
+	rules = append(rules, map[string]any{
+		"type":        "field",
+		"ip":          privateCIDRs,
+		"outboundTag": "direct",
+	})
 	return map[string]any{
 		"domainStrategy": "IPIfNonMatch",
 		"rules":          rules,

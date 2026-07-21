@@ -82,11 +82,13 @@ export interface AppSettings {
   // Application
   autoConnect: boolean;
   launchAtStartup: boolean;
+  minimizeToTray: boolean;
   // Appearance
   theme: string; // preset id
   accent: string; // palette id
   font: string; // font id
   radius: string; // rounding id
+  navPosition: string; // "left" | "top"
 }
 
 export interface Stats {

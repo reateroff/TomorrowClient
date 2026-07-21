@@ -19,9 +19,12 @@ import {
   Settings2,
   FileJson,
   Lock,
+  PanelLeft,
+  PanelTop,
+  X,
 } from "lucide-react";
-import type { AppInfo, AppSettings, Core, RoutingMode } from "../types";
-import { THEME_PRESETS, ACCENTS, FONTS, RADII } from "../theme";
+import type { AppInfo, AppSettings, Core } from "../types";
+import { THEME_PRESETS, ACCENTS, FONTS, RADII, isHex } from "../theme";
 import {
   GetLogs,
   ClearLogs,
@@ -245,22 +248,35 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
             </button>
           ))}
         </div>
+        <CustomAccent
+          value={settings.accent}
+          onApply={(hex) => set({ accent: hex })}
+        />
       </Section>
 
       <Section icon={<Monitor size={16} />} title="Шрифт">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {FONTS.map((f) => (
             <button
               key={f.id}
               onClick={() => set({ font: f.id })}
-              style={{ fontFamily: f.stack }}
-              className={`rounded-lg border px-3 py-3 text-center text-sm transition ${
+              className={`flex flex-col items-start gap-1 rounded-lg border px-4 py-3 text-left transition ${
                 settings.font === f.id
-                  ? "border-accent/60 bg-surface-2 text-text"
-                  : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+                  ? "border-accent/60 bg-surface-2"
+                  : "border-border bg-surface hover:bg-surface-2/60"
               }`}
             >
-              {f.name}
+              <span
+                style={{ fontFamily: f.stack }}
+                className={`text-lg leading-tight ${
+                  settings.font === f.id ? "text-text" : "text-text-muted"
+                }`}
+              >
+                Соединение
+              </span>
+              <span className="font-mono text-[11px] text-text-faint">
+                {f.name}
+              </span>
             </button>
           ))}
         </div>
@@ -288,6 +304,207 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
           ))}
         </div>
       </Section>
+
+      <Section icon={<PanelLeft size={16} />} title="Расположение вкладок">
+        <div className="grid grid-cols-2 gap-3">
+          <NavPosCard
+            active={(settings.navPosition || "left") === "left"}
+            icon={<PanelLeft size={18} />}
+            title="Слева"
+            onClick={() => set({ navPosition: "left" })}
+          />
+          <NavPosCard
+            active={settings.navPosition === "top"}
+            icon={<PanelTop size={18} />}
+            title="Сверху"
+            onClick={() => set({ navPosition: "top" })}
+          />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function NavPosCard({
+  active,
+  icon,
+  title,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition ${
+        active
+          ? "border-accent/60 bg-surface-2 text-text"
+          : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+      }`}
+    >
+      <span className={active ? "text-accent" : "text-text-faint"}>{icon}</span>
+      <span className="text-sm">{title}</span>
+    </button>
+  );
+}
+
+// CustomAccent opens a polished modal to pick a custom hex accent: a large live
+// preview, a native colour wheel, a hex field and a strip of quick shades.
+function CustomAccent({
+  value,
+  onApply,
+}: {
+  value: string;
+  onApply: (hex: string) => void;
+}) {
+  const custom = isHex(value);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className={`mt-3 flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition ${
+          custom
+            ? "border-accent/60 bg-surface-2 text-text"
+            : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+        }`}
+      >
+        <span
+          className="h-5 w-5 rounded-full border border-border"
+          style={{ background: custom ? value : "conic-gradient(from 0deg,#f26d6d,#e0b155,#5bd6a0,#38bdf8,#b18cff,#f26d6d)" }}
+        />
+        {custom ? `Свой цвет · ${value}` : "Выбрать свой цвет"}
+      </button>
+      {open && (
+        <ColorPickerModal
+          initial={custom ? value : "#7c8cff"}
+          onClose={() => setOpen(false)}
+          onApply={(hex) => {
+            onApply(hex);
+            setOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+const QUICK_SHADES = [
+  "#7c8cff", "#4f8cff", "#38bdf8", "#4fd1c5", "#5bd6a0", "#a3e635",
+  "#e0b155", "#fb923c", "#f26d6d", "#f08a9c", "#e879f9", "#b18cff",
+  "#64748b", "#5a5f6b", "#3a7a55", "#8f4550",
+];
+
+function ColorPickerModal({
+  initial,
+  onClose,
+  onApply,
+}: {
+  initial: string;
+  onClose: () => void;
+  onApply: (hex: string) => void;
+}) {
+  const [hex, setHex] = useState(initial);
+  const valid = isHex(hex);
+  const preview = valid ? hex : "#2a2a2f";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="animate-fade-up w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-text">Свой цвет акцента</h2>
+          <button
+            onClick={onClose}
+            className="no-drag text-text-faint transition hover:text-text"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Live preview */}
+        <div
+          className="mb-4 flex h-20 items-center justify-center rounded-lg border border-border"
+          style={{ background: preview }}
+        >
+          <span
+            className="rounded-md px-3 py-1 font-mono text-sm"
+            style={{
+              background: "rgba(0,0,0,0.35)",
+              color: "#fff",
+            }}
+          >
+            {valid ? hex.toUpperCase() : "—"}
+          </span>
+        </div>
+
+        {/* Wheel + hex field */}
+        <div className="mb-4 flex items-center gap-3">
+          <label
+            className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-lg border border-border"
+            style={{ background: preview }}
+            title="Палитра"
+          >
+            <input
+              type="color"
+              value={valid ? hex : "#7c8cff"}
+              onChange={(e) => setHex(e.target.value)}
+              className="h-0 w-0 opacity-0"
+            />
+            <Palette size={16} className="text-white/80 mix-blend-difference" />
+          </label>
+          <input
+            value={hex}
+            onChange={(e) => setHex(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && valid && onApply(hex)}
+            placeholder="#ffffff"
+            spellCheck={false}
+            className={`min-w-0 flex-1 rounded-lg border bg-bg px-3 py-2.5 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 ${
+              hex.length > 1 && !valid ? "border-danger/50" : "border-border"
+            }`}
+          />
+        </div>
+
+        {/* Quick shades */}
+        <div className="mb-5 grid grid-cols-8 gap-2">
+          {QUICK_SHADES.map((c) => (
+            <button
+              key={c}
+              onClick={() => setHex(c)}
+              title={c}
+              className={`h-7 w-full rounded-md border transition ${
+                hex.toLowerCase() === c ? "border-text" : "border-transparent hover:border-border"
+              }`}
+              style={{ background: c }}
+            />
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-border px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={() => onApply(hex)}
+            disabled={!valid}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
+          >
+            Применить
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -310,6 +527,16 @@ function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
             desc="Автоматически поднимать туннель при старте"
             checked={settings.autoConnect}
             onChange={(v) => set({ autoConnect: v })}
+          />
+        </div>
+      </Section>
+      <Section icon={<Monitor size={16} />} title="Окно">
+        <div className="flex flex-col gap-3">
+          <Switch
+            label="Сворачивать в трей"
+            desc="Прятать окно в область уведомлений вместо панели задач"
+            checked={settings.minimizeToTray}
+            onChange={(v) => set({ minimizeToTray: v })}
           />
         </div>
       </Section>
@@ -352,25 +579,6 @@ function Connection({
             title="xray"
             desc="Xray-core + tun2socks через WinTun."
             onClick={() => set({ core: "xray" as Core })}
-          />
-        </div>
-      </Section>
-
-      <Section icon={<Route size={16} />} title="Маршрутизация">
-        <div className="grid grid-cols-2 gap-3">
-          <Card
-            active={settings.routingMode === "rules"}
-            disabled={disabled}
-            title="По правилам"
-            desc="Локальная сеть напрямую"
-            onClick={() => set({ routingMode: "rules" as RoutingMode })}
-          />
-          <Card
-            active={settings.routingMode === "global"}
-            disabled={disabled}
-            title="Глобально"
-            desc="Весь трафик через VPN"
-            onClick={() => set({ routingMode: "global" as RoutingMode })}
           />
         </div>
       </Section>

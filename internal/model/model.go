@@ -138,6 +138,9 @@ type AppSettings struct {
 	AutoConnect bool `json:"autoConnect"`
 	// LaunchAtStartup registers a Task Scheduler task to start with Windows.
 	LaunchAtStartup bool `json:"launchAtStartup"`
+	// MinimizeToTray hides the window to the notification area on minimize
+	// instead of the taskbar.
+	MinimizeToTray bool `json:"minimizeToTray"`
 
 	// --- Appearance ---
 	// Theme is the base preset id ("graphite" / "midnight" / "coal").
@@ -148,6 +151,8 @@ type AppSettings struct {
 	Font string `json:"font"`
 	// Radius is the corner rounding preset ("sharp" / "soft" / "round").
 	Radius string `json:"radius"`
+	// NavPosition places the navigation tabs on the "left" (default) or "top".
+	NavPosition string `json:"navPosition"`
 }
 
 // TunInterfaceName returns the configured TUN adapter name, falling back to the
@@ -178,6 +183,7 @@ func DefaultSettings() AppSettings {
 		Accent:      "indigo",
 		Font:        "inter",
 		Radius:      "soft",
+		NavPosition: "left",
 	}
 }
 

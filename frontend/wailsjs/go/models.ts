@@ -48,10 +48,12 @@ export namespace model {
 	    rules: RoutingRule[];
 	    autoConnect: boolean;
 	    launchAtStartup: boolean;
+	    minimizeToTray: boolean;
 	    theme: string;
 	    accent: string;
 	    font: string;
 	    radius: string;
+	    navPosition: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
@@ -69,10 +71,12 @@ export namespace model {
 	        this.rules = this.convertValues(source["rules"], RoutingRule);
 	        this.autoConnect = source["autoConnect"];
 	        this.launchAtStartup = source["launchAtStartup"];
+	        this.minimizeToTray = source["minimizeToTray"];
 	        this.theme = source["theme"];
 	        this.accent = source["accent"];
 	        this.font = source["font"];
 	        this.radius = source["radius"];
+	        this.navPosition = source["navPosition"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

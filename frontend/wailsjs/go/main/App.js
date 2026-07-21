@@ -54,6 +54,10 @@ export function ImportLink(arg1) {
   return window['go']['main']['App']['ImportLink'](arg1);
 }
 
+export function ListProcesses() {
+  return window['go']['main']['App']['ListProcesses']();
+}
+
 export function PingProfile(arg1) {
   return window['go']['main']['App']['PingProfile'](arg1);
 }

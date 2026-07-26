@@ -65,6 +65,7 @@ import {
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { plural } from "../format";
 import { push } from "./Toasts";
+import logo from "../assets/logo.png";
 
 // How many taps on the client name unlock the developer section.
 const TAPS_TO_UNLOCK = 10;
@@ -155,8 +156,9 @@ export default function SettingsView({
     return (
       <div
         key="menu"
-        className="animate-view flex h-full flex-col overflow-y-auto p-6"
+        className="animate-view h-full overflow-y-auto p-6 [scrollbar-gutter:stable_both-edges]"
       >
+        <div className="mx-auto flex w-full max-w-2xl flex-col">
         <div className="mb-5 flex items-center gap-2.5">
           <Settings2 size={20} className="text-accent" />
           <h1 className="text-lg font-semibold text-text">Настройки</h1>
@@ -191,6 +193,7 @@ export default function SettingsView({
             </button>
           ))}
         </div>
+        </div>
       </div>
     );
   }
@@ -200,30 +203,36 @@ export default function SettingsView({
   // mount, and without distinct keys React reuses the same node when moving
   // between the menu and a section, or between two sections.
   return (
-    <div key={tab} className="animate-view flex h-full min-h-0 flex-col p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <button
-          onClick={() => setTab(null)}
-          className="grid h-8 w-8 place-items-center rounded-lg text-text-muted transition hover:bg-surface-2 hover:text-text"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <span className="text-accent">{active.icon}</span>
-        <h1 className="text-lg font-semibold text-text">{active.label}</h1>
-        {active.dev && (
-          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
-            DEV
-          </span>
-        )}
+    <div key={tab} className="animate-view flex h-full min-h-0 flex-col">
+      {/* Header and body each centre a column of the same width, so the back
+          arrow lines up with the left edge of the content below it. */}
+      <div className="px-6 pt-6">
+        <div className="mx-auto mb-6 flex w-full max-w-2xl items-center gap-3">
+          <button
+            onClick={() => setTab(null)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-text-muted transition hover:bg-surface-2 hover:text-text"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <span className="text-accent">{active.icon}</span>
+          <h1 className="text-lg font-semibold text-text">{active.label}</h1>
+          {active.dev && (
+            <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+              DEV
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* -mr-6 cancels this page's right padding so the scrollbar sits flush
-          against the window edge like every other view; pr-1.5 keeps the
-          content itself off the bar. The logs tab scrolls inside its own
-          bordered panel, so it must not be pulled out. */}
+      {/* The scroller spans the full width so its bar sits at the window edge
+          without a negative margin, which would have thrown the centred column
+          off by half the padding. scrollbar-gutter reserves the same space on
+          both sides, so content does not shift when the bar appears. */}
       <div
-        className={`min-h-0 flex-1 ${
-          tab === "logs" ? "flex flex-col" : "-mr-6 overflow-y-auto pr-1.5"
+        className={`min-h-0 flex-1 px-6 pb-6 ${
+          tab === "logs"
+            ? "flex flex-col"
+            : "overflow-y-auto [scrollbar-gutter:stable_both-edges]"
         }`}
       >
         {tab === "appearance" && <Appearance settings={settings} set={set} />}
@@ -253,7 +262,7 @@ type SetFn = (patch: Partial<AppSettings>) => void;
 
 function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-7">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-7">
       <Section icon={<Palette size={16} />} title="Тема">
         <ThemePicker
           value={settings.theme}
@@ -793,7 +802,7 @@ function ColorPickerModal({
 
 function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
-    <div className="flex max-w-xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
       {/* Same single-card layout as the Connection screen so the two settings
           pages read as one system. */}
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
@@ -861,7 +870,7 @@ function Connection({
   disabled: boolean;
 }) {
   return (
-    <div className="flex max-w-xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
       {disabled && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs text-text-muted">
           <Lock size={14} className="shrink-0 text-text-faint" />
@@ -1092,7 +1101,7 @@ function Logs() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
         <button
           onClick={copyAll}
@@ -1144,7 +1153,7 @@ function Developer({
   onApply: (s: AppSettings) => void;
 }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-7 pb-2">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-7 pb-2">
       {/* Every one of these dumps carries server addresses, uuids or passwords
           in plain text, so demo mode replaces them outright rather than trying
           to redact JSON field by field. */}
@@ -1661,36 +1670,60 @@ function About({
     setTaps(n);
   };
 
+  // Full column width, like every other settings page — a narrow card left the
+  // section looking half-empty.
   return (
-    <div className="flex max-w-2xl flex-col gap-7">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
-        <div className="flex items-center gap-4 border-b border-border p-5">
-          <div className="grid h-14 w-14 place-items-center rounded-lg bg-accent/15 font-mono text-lg font-semibold text-accent">
-            TC
-          </div>
-          <div className="min-w-0">
-            <button
-              onClick={tap}
-              className="select-none text-left text-base font-medium text-text outline-none"
-            >
-              TomorrowClient
-            </button>
-            <div className="font-mono text-xs text-text-faint">
-              версия {appInfo?.version ?? "—"}
-            </div>
-            {!devMode && taps >= 3 && (
-              <div className="mt-1 font-mono text-[11px] text-text-faint">
-                ещё {left} {plural(left, "шаг", "шага", "шагов")}…
-              </div>
+        {/* Hero: the logo carries the name, so no wordmark repeats it in text.
+            The soft accent wash behind it ties a fixed brand colour to whatever
+            accent the user picked. */}
+        <div className="relative flex flex-col items-center gap-5 px-8 pb-10 pt-14">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_at_top,var(--color-accent)_0%,transparent_70%)] opacity-[0.08]"
+          />
+
+          {/* The logo is the unlock target — the usual place to tap. */}
+          <button
+            onClick={tap}
+            title="TomorrowClient"
+            className="no-drag relative select-none outline-none transition active:scale-[0.98]"
+          >
+            <img
+              src={logo}
+              alt="Tomorrow"
+              draggable={false}
+              className="h-24 w-auto"
+            />
+          </button>
+
+          <div className="relative flex items-center gap-2">
+            <span className="rounded-md border border-border bg-bg px-2.5 py-1 font-mono text-xs text-text-muted">
+              v{appInfo?.version ?? "—"}
+            </span>
+            {devMode && (
+              <span className="rounded-md bg-accent/15 px-2.5 py-1 font-mono text-xs text-accent">
+                DEV
+              </span>
             )}
           </div>
+
+          {!devMode && taps >= 3 && (
+            <div className="relative font-mono text-[11px] text-text-faint">
+              ещё {left} {plural(left, "шаг", "шага", "шагов")}…
+            </div>
+          )}
         </div>
-        <div className="flex flex-col gap-3 p-5">
-          <p className="text-sm leading-relaxed text-text-muted">
+
+        <div className="flex flex-col gap-4 border-t border-border p-6">
+          {/* The card is wide now, but a line of prose that wide is hard to
+              read, so the paragraph keeps its own measure. */}
+          <p className="mx-auto max-w-md text-center text-sm leading-relaxed text-text-muted">
             Минималистичный VPN-клиент для Windows на WinTun. Ядро sing-box
             встроено в приложение и работает в его процессе.
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-1.5">
             {(appInfo?.builtWith ?? "Wails · Go · React · sing-box")
               .split("·")
               .map((t) => (
@@ -1702,11 +1735,12 @@ function About({
                 </span>
               ))}
           </div>
-          <div className="border-t border-border pt-3 font-mono text-[11px] text-text-faint">
-            {appInfo?.copyright ?? "© TomorrowClient"}
-          </div>
         </div>
       </div>
+
+      <p className="text-center font-mono text-[11px] text-text-faint">
+        {appInfo?.copyright ?? "© TomorrowClient"}
+      </p>
     </div>
   );
 }

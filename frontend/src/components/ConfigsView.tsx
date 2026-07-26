@@ -96,8 +96,9 @@ export default function ConfigsView({
   };
 
   return (
-    <div className="animate-view flex h-full flex-col p-6">
-      <div className="mb-5 flex items-start justify-between">
+    <div className="animate-view flex h-full min-h-0 flex-col">
+      <div className="px-6 pt-6">
+      <div className="mx-auto mb-5 flex w-full max-w-2xl items-start justify-between">
         <div>
           <h1 className="text-base font-medium text-text">Конфигурации</h1>
           <p className="font-mono text-xs text-text-faint">
@@ -127,6 +128,7 @@ export default function ConfigsView({
           </button>
         )}
       </div>
+      </div>
 
       {empty ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -147,7 +149,8 @@ export default function ConfigsView({
           </p>
         </div>
       ) : (
-        <div className="-mr-6 flex flex-1 flex-col gap-2 overflow-y-auto pr-1.5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable_both-edges]">
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
           {servers.map((p) => (
             <LocationRow
               key={p.id}
@@ -160,6 +163,7 @@ export default function ConfigsView({
               onActivate={onActivate}
             />
           ))}
+          </div>
         </div>
       )}
     </div>

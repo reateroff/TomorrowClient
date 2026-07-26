@@ -5,6 +5,7 @@ import {
   WindowToggleMaximise,
   Quit,
 } from "../../wailsjs/runtime/runtime";
+import logoMark from "../assets/logo-mark.png";
 
 interface Props {
   // When true, minimizing hides the window to the tray instead of the taskbar.
@@ -18,7 +19,12 @@ export default function TitleBar({ minimizeToTray }: Props) {
   return (
     <div className="drag flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface/60 px-3 backdrop-blur">
       <div className="flex items-center gap-2">
-        <div className="h-2.5 w-2.5 rounded-full bg-accent" />
+        <img
+          src={logoMark}
+          alt=""
+          draggable={false}
+          className="h-4 w-4 shrink-0"
+        />
         <span className="font-mono text-xs tracking-wide text-text-muted">
           TomorrowClient
         </span>

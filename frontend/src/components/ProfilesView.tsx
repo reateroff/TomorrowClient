@@ -79,24 +79,28 @@ export default function ProfilesView({
   const empty = profiles.length === 0 && subscriptions.length === 0;
 
   return (
-    <div className="animate-view flex h-full flex-col p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-base font-medium text-text">Профили</h1>
-          <p className="font-mono text-xs text-text-faint">
-            {profiles.length}{" "}
-            {plural(profiles.length, "сервер", "сервера", "серверов")} ·{" "}
-            {subscriptions.length}{" "}
-            {plural(subscriptions.length, "подписка", "подписки", "подписок")}
-          </p>
+    <div className="animate-view flex h-full min-h-0 flex-col">
+      {/* Header and list centre columns of the same width; the scroller itself
+          spans the window so its bar still sits at the edge. */}
+      <div className="px-6 pt-6">
+        <div className="mx-auto mb-5 flex w-full max-w-2xl items-center justify-between">
+          <div>
+            <h1 className="text-base font-medium text-text">Профили</h1>
+            <p className="font-mono text-xs text-text-faint">
+              {profiles.length}{" "}
+              {plural(profiles.length, "сервер", "сервера", "серверов")} ·{" "}
+              {subscriptions.length}{" "}
+              {plural(subscriptions.length, "подписка", "подписки", "подписок")}
+            </p>
+          </div>
+          <button
+            onClick={() => setAdding(true)}
+            className="no-drag flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
+          >
+            <Plus size={16} />
+            Добавить
+          </button>
         </div>
-        <button
-          onClick={() => setAdding(true)}
-          className="no-drag flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
-        >
-          <Plus size={16} />
-          Добавить
-        </button>
       </div>
 
       {empty ? (
@@ -109,11 +113,11 @@ export default function ProfilesView({
           </p>
         </div>
       ) : (
-        <>
-          <p className="mb-3 text-xs text-text-faint">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable_both-edges]">
+          <p className="mx-auto mb-3 w-full max-w-2xl text-xs text-text-faint">
             Выберите профиль — его локации появятся во вкладке «Конфигурации».
           </p>
-          <div className="-mr-6 flex flex-1 flex-col gap-2 overflow-y-auto pr-1.5">
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
             {manual.length > 0 && (
               <GroupCard
                 icon={<Link2 size={16} />}
@@ -166,7 +170,7 @@ export default function ProfilesView({
               />
             ))}
           </div>
-        </>
+        </div>
       )}
 
       {adding && (

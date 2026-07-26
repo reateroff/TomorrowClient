@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Power,
   ArrowDownToLine,
   ArrowUpFromLine,
   Timer,
@@ -20,6 +19,7 @@ import { PingLatency } from "../../wailsjs/go/main/App";
 // How often the live ping refreshes while connected.
 const PING_INTERVAL_MS = 5000;
 import FlagChip from "./FlagChip";
+import logoMark from "../assets/logo-mark.png";
 
 interface Props {
   status: Status;
@@ -101,12 +101,13 @@ export default function ConnectionView({
     isConnected ? onDisconnect() : onConnect();
   };
 
-  // Filled disc styling: accent when connected, surface otherwise.
+  // Filled disc styling: accent when connected, surface otherwise. The mark on
+  // top carries no colour of its own from these, so only fill and border here.
   const disc = isConnected
-    ? "bg-accent text-white shadow-xl shadow-accent/25"
+    ? "bg-accent shadow-xl shadow-accent/25"
     : state === "error"
-    ? "bg-surface border border-danger/40 text-danger"
-    : "bg-surface border border-border text-text-muted group-hover:border-text-faint group-hover:text-text";
+    ? "bg-surface border border-danger/40"
+    : "bg-surface border border-border group-hover:border-text-faint";
 
   return (
     <div className="animate-view flex h-full flex-col p-6">
@@ -148,7 +149,21 @@ export default function ConnectionView({
               isBusy ? "animate-pulse" : ""
             }`}
           >
-            <Power size={72} strokeWidth={2} />
+            {/* brightness-0 invert repaints the mark pure white while keeping
+                its alpha, because once the disc fills with the accent the logo's
+                own periwinkle sits right on top of it — with the default indigo
+                accent the two are nearly the same colour. Off, it keeps its own
+                colour and just dims until hovered. */}
+            <img
+              src={logoMark}
+              alt=""
+              draggable={false}
+              className={`h-24 w-24 transition ${
+                isConnected
+                  ? "brightness-0 invert"
+                  : "opacity-70 group-hover:opacity-100"
+              }`}
+            />
           </span>
         </button>
 

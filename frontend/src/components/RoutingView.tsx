@@ -113,7 +113,11 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
   const shown = rules.filter((r) => r.type === type);
 
   return (
-    <div className="animate-view flex h-full flex-col p-6">
+    <div className="animate-view flex h-full min-h-0 flex-col">
+      {/* Everything sits in a centred column of one width; only the scroller
+          below spans the window, so its bar stays at the edge. */}
+      <div className="px-6 pt-6">
+      <div className="mx-auto w-full max-w-2xl">
       <div className="mb-5 flex items-center gap-2.5">
         <Split size={20} className="text-accent" />
         <div>
@@ -203,6 +207,8 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
           ))}
         </div>
       </div>
+      </div>
+      </div>
 
       {/* Rule list for the active type */}
       {shown.length === 0 ? (
@@ -215,10 +221,16 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
           </p>
         </div>
       ) : (
-        <div className="-mr-6 flex flex-1 flex-col gap-2 overflow-y-auto pr-1.5">
-          {shown.map((r, i) => (
-            <RuleRow key={`${r.value}-${i}`} rule={r} onDelete={() => remove(r)} />
-          ))}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable_both-edges]">
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
+            {shown.map((r, i) => (
+              <RuleRow
+                key={`${r.value}-${i}`}
+                rule={r}
+                onDelete={() => remove(r)}
+              />
+            ))}
+          </div>
         </div>
       )}
 

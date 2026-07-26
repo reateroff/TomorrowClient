@@ -96,6 +96,12 @@ Section
 
     !insertmacro wails.files
 
+    # wails.files installs the executable only. wintun.dll has to ride along:
+    # the sing-box core is linked into the binary but loads this driver at
+    # runtime to create the TUN adapter, and Windows looks for it in the
+    # application directory alone. Without it an install cannot connect at all.
+    File "..\..\bin\wintun.dll"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 

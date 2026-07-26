@@ -84,6 +84,7 @@ export interface AppSettings {
   launchAtStartup: boolean;
   minimizeToTray: boolean;
   devMode: boolean; // unlocked by tapping the client name 10x in About
+  demoMode: boolean; // masks addresses, keys and raw dumps on screen
   // Appearance
   theme: string; // preset id
   accent: string; // palette id or raw #rrggbb

@@ -54,6 +54,7 @@ export namespace model {
 	    }
 	}
 	export class AppSettings {
+	    settingsVersion: number;
 	    core: string;
 	    activeProfileId: string;
 	    dns: string;
@@ -66,6 +67,7 @@ export namespace model {
 	    launchAtStartup: boolean;
 	    minimizeToTray: boolean;
 	    devMode: boolean;
+	    demoMode: boolean;
 	    theme: string;
 	    accent: string;
 	    savedColors: string[];
@@ -80,6 +82,7 @@ export namespace model {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.settingsVersion = source["settingsVersion"];
 	        this.core = source["core"];
 	        this.activeProfileId = source["activeProfileId"];
 	        this.dns = source["dns"];
@@ -92,6 +95,7 @@ export namespace model {
 	        this.launchAtStartup = source["launchAtStartup"];
 	        this.minimizeToTray = source["minimizeToTray"];
 	        this.devMode = source["devMode"];
+	        this.demoMode = source["demoMode"];
 	        this.theme = source["theme"];
 	        this.accent = source["accent"];
 	        this.savedColors = source["savedColors"];

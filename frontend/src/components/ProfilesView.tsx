@@ -13,7 +13,7 @@ import {
   ListTree,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
-import { formatTraffic, formatExpiry, subDomain, plural } from "../format";
+import { formatTraffic, formatExpiry, subDomain, plural, mask } from "../format";
 import AddModal from "./AddModal";
 import LinksModal from "./LinksModal";
 import Menu from "./Menu";
@@ -24,6 +24,7 @@ interface Props {
   profiles: Profile[];
   subscriptions: Subscription[];
   selectedGroup: string;
+  hideData: boolean; // demo mode: mask subscription domains and share links
   onImportLink: (raw: string) => Promise<void>;
   onAddSub: (name: string, url: string) => Promise<void>;
   onUpdateSub: (id: string) => Promise<void>;
@@ -39,6 +40,7 @@ export default function ProfilesView({
   profiles,
   subscriptions,
   selectedGroup,
+  hideData,
   onImportLink,
   onAddSub,
   onUpdateSub,
@@ -133,7 +135,7 @@ export default function ProfilesView({
                 key={sub.id}
                 icon={<Rss size={16} />}
                 name={sub.name}
-                domain={subDomain(sub.url)}
+                domain={mask(hideData, subDomain(sub.url))}
                 count={bySub(sub.id).length}
                 sub={sub}
                 selected={selectedGroup === sub.id}
@@ -180,6 +182,7 @@ export default function ProfilesView({
         <LinksModal
           title={linksTitle}
           profiles={linksProfiles}
+          hideData={hideData}
           onClose={() => setLinksOf(null)}
         />
       )}

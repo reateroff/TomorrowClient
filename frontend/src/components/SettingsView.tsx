@@ -33,6 +33,7 @@ import {
   Pipette,
   ChevronDown,
   Plus,
+  EyeOff,
 } from "lucide-react";
 import type { AppInfo, AppSettings } from "../types";
 import {
@@ -326,18 +327,19 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
             <button
               key={r.id}
               onClick={() => set({ radius: r.id })}
-              className={`flex flex-col items-center gap-2.5 border px-3 py-3.5 text-xs transition ${
+              className={`flex flex-col items-center gap-2 border px-3 py-2.5 text-xs transition ${
                 settings.radius === r.id
                   ? "border-accent/60 bg-surface-2 text-text"
                   : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
               }`}
               style={{ borderRadius: r.value }}
             >
-              {/* 56px tall on purpose: the old 28px swatch was fully rounded at
-                  14px already, so "Мягкие" and "Круглые" drew the same shape. A
-                  radius only reads as different below half the height. */}
+              {/* 48px is the floor here: a radius stops reading as distinct once
+                  it reaches half the height, so at the original 28px the 14px
+                  and 22px presets drew an identical shape. 48px keeps all three
+                  apart while staying compact. */}
               <span
-                className="h-14 w-20 border border-text-faint"
+                className="h-12 w-16 border border-text-faint"
                 style={{ borderRadius: r.value }}
               />
               {r.name}
@@ -385,14 +387,13 @@ function ThemePicker({
   const [expanded, setExpanded] = useState(false);
   const hidden = THEME_PRESETS.length - THEMES_VISIBLE;
 
-  // A theme picked earlier from the hidden half must still be visible, or it
-  // would look unselected until the user expanded the list again.
-  const selectedIsHidden =
-    THEME_PRESETS.findIndex((p) => p.id === value) >= THEMES_VISIBLE;
-  const shown =
-    expanded || selectedIsHidden
-      ? THEME_PRESETS
-      : THEME_PRESETS.slice(0, THEMES_VISIBLE);
+  // Only `expanded` decides what is shown. An earlier version force-expanded
+  // the list when the current theme was one of the hidden ones, which also took
+  // the toggle away and left no way to collapse it again — collapsed means
+  // collapsed, even if that hides the active swatch.
+  const shown = expanded
+    ? THEME_PRESETS
+    : THEME_PRESETS.slice(0, THEMES_VISIBLE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -421,7 +422,7 @@ function ThemePicker({
         ))}
       </div>
 
-      {hidden > 0 && !selectedIsHidden && (
+      {hidden > 0 && (
         <button
           onClick={() => setExpanded((e) => !e)}
           className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface py-2 text-xs text-text-muted transition hover:bg-surface-2/60 hover:text-text"
@@ -823,7 +824,27 @@ function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
             onChange={(v) => set({ minimizeToTray: v })}
           />
         </Row>
+        <Row
+          label="Режим демонстрации"
+          hint="Скрывать адреса и ссылки — для скриншотов и записи экрана"
+        >
+          <Toggle
+            checked={settings.demoMode}
+            onChange={(v) => set({ demoMode: v })}
+          />
+        </Row>
       </div>
+
+      {settings.demoMode && (
+        <div className="flex items-start gap-2 rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 text-xs text-accent">
+          <EyeOff size={14} className="mt-0.5 shrink-0" />
+          <span>
+            Скрыты адреса серверов, домены подписок, share-ссылки и дампы в
+            разделе разработчика. Названия серверов, DNS и логи остаются
+            видимыми.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1124,10 +1145,13 @@ function Developer({
 }) {
   return (
     <div className="flex max-w-2xl flex-col gap-7 pb-2">
-      <ActiveProfileDump />
-      <CoreConfig core={settings.core} />
-      <SettingsDump />
-      <NetDiag />
+      {/* Every one of these dumps carries server addresses, uuids or passwords
+          in plain text, so demo mode replaces them outright rather than trying
+          to redact JSON field by field. */}
+      <ActiveProfileDump hide={settings.demoMode} />
+      <CoreConfig core={settings.core} hide={settings.demoMode} />
+      <SettingsDump hide={settings.demoMode} />
+      <NetDiag hide={settings.demoMode} />
       <Simulation />
       <Maintenance />
 
@@ -1151,7 +1175,7 @@ function Developer({
 
 // ActiveProfileDump shows the currently selected server as it is stored — every
 // field parsed out of the share link, including the ones no screen displays.
-function ActiveProfileDump() {
+function ActiveProfileDump({ hide }: { hide: boolean }) {
   const [json, setJson] = useState("");
   const [err, setErr] = useState("");
 
@@ -1171,14 +1195,20 @@ function ActiveProfileDump() {
         Выбранный сейчас сервер целиком: протокол, транспорт, TLS и ключи —
         всё, что удалось разобрать из ссылки.
       </p>
-      <div className="flex gap-2">
-        <ToolButton onClick={load} primary>
-          Показать конфиг
-        </ToolButton>
-        {json && <CopyButton text={json} labelled />}
-      </div>
-      {err && <ErrorBox text={err} />}
-      {json && <Output text={json} />}
+      {hide ? (
+        <HiddenNotice />
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <ToolButton onClick={load} primary>
+              Показать конфиг
+            </ToolButton>
+            {json && <CopyButton text={json} labelled />}
+          </div>
+          {err && <ErrorBox text={err} />}
+          {json && <Output text={json} />}
+        </>
+      )}
     </Section>
   );
 }
@@ -1260,7 +1290,7 @@ function Simulation() {
 }
 
 // CoreConfig previews the JSON handed to the active core.
-function CoreConfig({ core }: { core: string }) {
+function CoreConfig({ core, hide }: { core: string; hide: boolean }) {
   const [config, setConfig] = useState("");
   const [err, setErr] = useState("");
 
@@ -1281,20 +1311,26 @@ function CoreConfig({ core }: { core: string }) {
         <span className="font-mono text-text">{core}</span>) для выбранного
         профиля.
       </p>
-      <div className="flex gap-2">
-        <ToolButton onClick={load} primary>
-          Показать конфиг
-        </ToolButton>
-        {config && <CopyButton text={config} labelled />}
-      </div>
-      {err && <ErrorBox text={err} />}
-      {config && <Output text={config} />}
+      {hide ? (
+        <HiddenNotice />
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <ToolButton onClick={load} primary>
+              Показать конфиг
+            </ToolButton>
+            {config && <CopyButton text={config} labelled />}
+          </div>
+          {err && <ErrorBox text={err} />}
+          {config && <Output text={config} />}
+        </>
+      )}
     </Section>
   );
 }
 
 // SettingsDump shows the settings exactly as persisted on disk.
-function SettingsDump() {
+function SettingsDump({ hide }: { hide: boolean }) {
   const [json, setJson] = useState("");
 
   return (
@@ -1303,19 +1339,27 @@ function SettingsDump() {
         Содержимое <span className="font-mono text-text">settings.json</span> —
         включая поля, которых нет в интерфейсе.
       </p>
-      <div className="flex gap-2">
-        <ToolButton onClick={async () => setJson((await GetSettingsJSON()) as string)}>
-          Показать
-        </ToolButton>
-        {json && <CopyButton text={json} labelled />}
-      </div>
-      {json && <Output text={json} />}
+      {hide ? (
+        <HiddenNotice />
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <ToolButton
+              onClick={async () => setJson((await GetSettingsJSON()) as string)}
+            >
+              Показать
+            </ToolButton>
+            {json && <CopyButton text={json} labelled />}
+          </div>
+          {json && <Output text={json} />}
+        </>
+      )}
     </Section>
   );
 }
 
 // NetDiag dumps the interface and IPv4 route tables.
-function NetDiag() {
+function NetDiag({ hide }: { hide: boolean }) {
   const [out, setOut] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1339,16 +1383,32 @@ function NetDiag() {
         Таблица интерфейсов и маршрутов IPv4 — здесь видно, поднялся ли TUN и
         куда уходит трафик по умолчанию.
       </p>
-      <div className="flex gap-2">
-        <ToolButton onClick={load} disabled={busy}>
-          <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
-          {busy ? "Собираю…" : "Собрать"}
-        </ToolButton>
-        {out && <CopyButton text={out} labelled />}
-      </div>
-      {err && <ErrorBox text={err} />}
-      {out && <Output text={out} />}
+      {hide ? (
+        <HiddenNotice />
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <ToolButton onClick={load} disabled={busy}>
+              <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
+              {busy ? "Собираю…" : "Собрать"}
+            </ToolButton>
+            {out && <CopyButton text={out} labelled />}
+          </div>
+          {err && <ErrorBox text={err} />}
+          {out && <Output text={out} />}
+        </>
+      )}
     </Section>
+  );
+}
+
+// HiddenNotice stands in for content demo mode is withholding.
+function HiddenNotice() {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2.5 text-xs text-text-muted">
+      <EyeOff size={14} className="shrink-0 text-text-faint" />
+      Скрыто в режиме демонстрации
+    </div>
   );
 }
 

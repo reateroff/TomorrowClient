@@ -18,6 +18,51 @@ func newTestStore(t *testing.T) *Store {
 	return &Store{dir: t.TempDir(), settings: model.DefaultSettings()}
 }
 
+// TestMigrateStackFromLegacyFile covers the v1 migration end to end through
+// load(): a settings file written before versioning has no settingsVersion key,
+// and load() merges onto DefaultSettings, so the marker has to be forced to 0
+// or the migration silently believes it already ran.
+func TestMigrateStackFromLegacyFile(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{"core":"sing-box","stack":"gvisor","dns":"1.1.1.1"}`
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("seed settings.json: %v", err)
+	}
+
+	s := &Store{dir: dir, settings: model.DefaultSettings()}
+	s.load()
+	if !s.migrate() {
+		t.Fatal("migrate reported no change for a pre-v1 file")
+	}
+	if got := s.Settings().Stack; got != "mixed" {
+		t.Errorf("stack = %q, want \"mixed\"", got)
+	}
+	if got := s.Settings().SettingsVersion; got != model.SettingsVersion {
+		t.Errorf("version = %d, want %d", got, model.SettingsVersion)
+	}
+
+	// Running again must be a no-op, so a later deliberate gvisor pick sticks.
+	s.settings.Stack = "gvisor"
+	if s.migrate() {
+		t.Error("migrate ran a second time")
+	}
+	if got := s.Settings().Stack; got != "gvisor" {
+		t.Errorf("migrate overwrote a deliberate choice: stack = %q", got)
+	}
+}
+
+// A fresh install carries the current version already, so nothing may migrate.
+func TestMigrateSkipsFreshInstall(t *testing.T) {
+	s := &Store{dir: t.TempDir(), settings: model.DefaultSettings()}
+	s.load()
+	if s.migrate() {
+		t.Error("migrate ran on a fresh install")
+	}
+	if got := s.Settings().Stack; got != "mixed" {
+		t.Errorf("default stack = %q, want \"mixed\"", got)
+	}
+}
+
 func TestResetAllClearsEverything(t *testing.T) {
 	s := newTestStore(t)
 

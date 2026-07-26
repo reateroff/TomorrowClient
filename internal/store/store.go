@@ -35,7 +35,30 @@ func New() (*Store, error) {
 	}
 	s := &Store{dir: dir, settings: model.DefaultSettings()}
 	s.load()
+	if s.migrate() {
+		_ = writeJSON(s.settingsPath(), s.settings)
+	}
 	return s, nil
+}
+
+// migrate applies one-time rewrites to settings loaded from an older file and
+// reports whether anything changed. Changing a default only affects fresh
+// installs — an existing settings.json keeps the old value forever — so a value
+// that must actually move needs a migration here.
+func (s *Store) migrate() bool {
+	if s.settings.SettingsVersion >= model.SettingsVersion {
+		return false
+	}
+
+	// v1: the default TUN stack moved from gvisor to mixed. In a pre-v1 file
+	// "gvisor" cannot be told apart from a deliberate pick, so it is rewritten
+	// exactly once; the recorded version stops it happening again.
+	if s.settings.SettingsVersion < 1 && s.settings.Stack == "gvisor" {
+		s.settings.Stack = "mixed"
+	}
+
+	s.settings.SettingsVersion = model.SettingsVersion
+	return true
 }
 
 // Dir returns the directory holding the store's JSON files.
@@ -48,6 +71,11 @@ func (s *Store) subsPath() string     { return filepath.Join(s.dir, "subscriptio
 // load reads the data files if present; missing files fall back to defaults.
 func (s *Store) load() {
 	if b, err := os.ReadFile(s.settingsPath()); err == nil {
+		// Unmarshalling merges onto DefaultSettings, so a key the file omits
+		// keeps the default. That is wrong for the version marker: a file
+		// written before migrations existed has no settingsVersion key and must
+		// read as 0, not as the current version. Zero it first.
+		s.settings.SettingsVersion = 0
 		_ = json.Unmarshal(b, &s.settings)
 	}
 	if b, err := os.ReadFile(s.profilesPath()); err == nil {

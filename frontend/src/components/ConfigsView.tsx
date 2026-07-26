@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
 import { describeChain } from "../proto";
-import { plural } from "../format";
+import { plural, HIDDEN } from "../format";
 import { stripCountryPrefix } from "../flags";
 import { PingProfile } from "../../wailsjs/go/main/App";
 import FlagChip from "./FlagChip";
@@ -20,6 +20,7 @@ interface Props {
   selectedGroup: string; // "manual" or a subscription id
   activeId: string;
   connected: boolean;
+  hideData: boolean; // demo mode: mask server addresses
   onActivate: (id: string) => void;
 }
 
@@ -35,6 +36,7 @@ export default function ConfigsView({
   selectedGroup,
   activeId,
   connected,
+  hideData,
   onActivate,
 }: Props) {
   const [pings, setPings] = useState<PingMap>({});
@@ -151,6 +153,7 @@ export default function ConfigsView({
               profile={p}
               active={p.id === activeId}
               connected={connected}
+              hideData={hideData}
               ping={pings[p.id]}
               onActivate={onActivate}
             />
@@ -167,12 +170,14 @@ function LocationRow({
   profile: p,
   active,
   connected,
+  hideData,
   ping,
   onActivate,
 }: {
   profile: Profile;
   active: boolean;
   connected: boolean;
+  hideData: boolean;
   ping?: number;
   onActivate: (id: string) => void;
 }) {
@@ -202,7 +207,8 @@ function LocationRow({
             )}
           </div>
           <div className="truncate font-mono text-xs text-text-faint">
-            {describeChain(p)} · {p.address}:{p.port}
+            {describeChain(p)} ·{" "}
+            {hideData ? HIDDEN : `${p.address}:${p.port}`}
           </div>
         </div>
       </button>

@@ -49,25 +49,25 @@ type Profile struct {
 	AlterID  int    `json:"alterId,omitempty"`  // vmess
 
 	// Transport
-	Network    string `json:"network,omitempty"`    // tcp / ws / grpc / http
-	Security   string `json:"security,omitempty"`   // none / tls / reality
-	SNI        string `json:"sni,omitempty"`        // tls server name
-	ALPN       string `json:"alpn,omitempty"`       // comma separated
+	Network     string `json:"network,omitempty"`     // tcp / ws / grpc / http
+	Security    string `json:"security,omitempty"`    // none / tls / reality
+	SNI         string `json:"sni,omitempty"`         // tls server name
+	ALPN        string `json:"alpn,omitempty"`        // comma separated
 	Fingerprint string `json:"fingerprint,omitempty"` // utls fingerprint
-	Flow       string `json:"flow,omitempty"`       // vless flow (xtls-rprx-vision)
-	PublicKey  string `json:"publicKey,omitempty"`  // reality
-	ShortID    string `json:"shortId,omitempty"`    // reality
-	Path       string `json:"path,omitempty"`       // ws/http path
-	Host       string `json:"host,omitempty"`       // ws/http host header
+	Flow        string `json:"flow,omitempty"`        // vless flow (xtls-rprx-vision)
+	PublicKey   string `json:"publicKey,omitempty"`   // reality
+	ShortID     string `json:"shortId,omitempty"`     // reality
+	Path        string `json:"path,omitempty"`        // ws/http path
+	Host        string `json:"host,omitempty"`        // ws/http host header
 	ServiceName string `json:"serviceName,omitempty"` // grpc
 
 	// QUIC-based protocols (hysteria / hysteria2 / tuic)
-	Obfs          string `json:"obfs,omitempty"`          // hysteria2 salamander / hysteria obfs
-	ObfsPassword  string `json:"obfsPassword,omitempty"`  // hysteria2 obfs password
-	UpMbps        int    `json:"upMbps,omitempty"`        // hysteria up bandwidth
-	DownMbps      int    `json:"downMbps,omitempty"`      // hysteria down bandwidth
-	Congestion    string `json:"congestion,omitempty"`    // tuic congestion control (bbr/cubic/new_reno)
-	UDPRelayMode  string `json:"udpRelayMode,omitempty"`  // tuic udp relay mode (native/quic)
+	Obfs         string `json:"obfs,omitempty"`         // hysteria2 salamander / hysteria obfs
+	ObfsPassword string `json:"obfsPassword,omitempty"` // hysteria2 obfs password
+	UpMbps       int    `json:"upMbps,omitempty"`       // hysteria up bandwidth
+	DownMbps     int    `json:"downMbps,omitempty"`     // hysteria down bandwidth
+	Congestion   string `json:"congestion,omitempty"`   // tuic congestion control (bbr/cubic/new_reno)
+	UDPRelayMode string `json:"udpRelayMode,omitempty"` // tuic udp relay mode (native/quic)
 
 	// The original share link, kept so we can re-export / debug.
 	Raw string `json:"raw,omitempty"`
@@ -108,8 +108,18 @@ type RoutingRule struct {
 	Icon   string `json:"icon"`   // process rules only: PNG data URL of the app icon
 }
 
+// SettingsVersion is bumped whenever a stored setting needs a one-time rewrite
+// on load. See Store.migrate: recording the version is what keeps a migration
+// from running twice and overwriting a later deliberate choice.
+const SettingsVersion = 1
+
 // AppSettings is the persisted user configuration.
 type AppSettings struct {
+	// SettingsVersion records which migrations have already been applied to
+	// this file. Absent in files written before migrations existed, which
+	// reads as 0.
+	SettingsVersion int `json:"settingsVersion"`
+
 	// --- Connection ---
 	Core            Core   `json:"core"`
 	ActiveProfileID string `json:"activeProfileId"`
@@ -122,7 +132,8 @@ type AppSettings struct {
 	// TunName is the name of the WinTun adapter both cores create. Empty means
 	// the built-in default ("TomorrowTun").
 	TunName string `json:"tunName"`
-	// Stack is the sing-box TUN network stack: "gvisor" (default) or "system".
+	// Stack is the sing-box TUN network stack: "mixed" (default), "gvisor" or
+	// "system".
 	Stack string `json:"stack"`
 	// MTU of the TUN interface; 0 means the core default (usually 9000/1500).
 	MTU int `json:"mtu"`
@@ -140,6 +151,9 @@ type AppSettings struct {
 	// DevMode unlocks the developer tools section. It is hidden until the user
 	// taps the client name on the About screen ten times.
 	DevMode bool `json:"devMode"`
+	// DemoMode masks addresses, keys and raw dumps on screen so the app can be
+	// shown or recorded without leaking server details.
+	DemoMode bool `json:"demoMode"`
 
 	// --- Appearance ---
 	// Theme is the base preset id ("graphite" / "midnight" / "coal").
@@ -178,6 +192,8 @@ const DefaultTunName = "TomorrowTun"
 // default core as requested.
 func DefaultSettings() AppSettings {
 	return AppSettings{
+		SettingsVersion: SettingsVersion,
+
 		Core:        CoreSingBox,
 		AutoConnect: false,
 		DNS:         "1.1.1.1",
@@ -197,9 +213,9 @@ func DefaultSettings() AppSettings {
 // Stats holds live traffic counters (cumulative bytes for the session and the
 // last measured speed in bytes/second).
 type Stats struct {
-	Upload      uint64 `json:"upload"`
-	Download    uint64 `json:"download"`
-	UploadSpeed uint64 `json:"uploadSpeed"`
+	Upload        uint64 `json:"upload"`
+	Download      uint64 `json:"download"`
+	UploadSpeed   uint64 `json:"uploadSpeed"`
 	DownloadSpeed uint64 `json:"downloadSpeed"`
 }
 

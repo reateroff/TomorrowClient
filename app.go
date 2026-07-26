@@ -253,6 +253,9 @@ func (a *App) SaveSettings(s model.AppSettings) error {
 	if err := startup.Set(s.LaunchAtStartup); err != nil {
 		runtime.LogError(a.ctx, "autostart: "+err.Error())
 	}
+	// The migration marker is backend bookkeeping. Stamping it here means the
+	// frontend can never send it back as 0 and make a migration run twice.
+	s.SettingsVersion = model.SettingsVersion
 	return a.store.SaveSettings(s)
 }
 

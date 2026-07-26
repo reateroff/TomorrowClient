@@ -2,19 +2,25 @@ import { useState } from "react";
 import { X, Copy, Check, Search } from "lucide-react";
 import type { Profile } from "../types";
 import { stripCountryPrefix } from "../flags";
-import { plural } from "../format";
+import { plural, maskLink } from "../format";
 import { push } from "./Toasts";
 
 interface Props {
   title: string;
   profiles: Profile[];
+  hideData: boolean; // demo mode: show only each link's scheme
   onClose: () => void;
 }
 
 // LinksModal lists the original share links (vless://, vmess://, hysteria2://…)
 // of a group's servers. Profile.Raw keeps the link the profile was parsed from,
 // so this is the real thing rather than something re-serialised.
-export default function LinksModal({ title, profiles, onClose }: Props) {
+export default function LinksModal({
+  title,
+  profiles,
+  hideData,
+  onClose,
+}: Props) {
   const [q, setQ] = useState("");
 
   // A profile edited by hand may have no original link; those cannot be listed.
@@ -103,7 +109,9 @@ export default function LinksModal({ title, profiles, onClose }: Props) {
                   Ничего не найдено.
                 </div>
               ) : (
-                shown.map((p) => <LinkRow key={p.id} profile={p} />)
+                shown.map((p) => (
+                  <LinkRow key={p.id} profile={p} hideData={hideData} />
+                ))
               )}
             </div>
 
@@ -121,14 +129,24 @@ export default function LinksModal({ title, profiles, onClose }: Props) {
   );
 }
 
-function LinkRow({ profile: p }: { profile: Profile }) {
+function LinkRow({
+  profile: p,
+  hideData,
+}: {
+  profile: Profile;
+  hideData: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
+  // Copying stays enabled while masked: the clipboard is not on screen, and
+  // getting the link out is the whole reason this dialog exists.
   const copy = async () => {
     await navigator.clipboard.writeText(p.raw ?? "");
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+
+  const shownLink = maskLink(hideData, p.raw ?? "");
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2">
@@ -136,8 +154,11 @@ function LinkRow({ profile: p }: { profile: Profile }) {
         <div className="truncate text-xs text-text">
           {stripCountryPrefix(p.name)}
         </div>
-        <div className="truncate font-mono text-[11px] text-text-faint" title={p.raw}>
-          {p.raw}
+        <div
+          className="truncate font-mono text-[11px] text-text-faint"
+          title={hideData ? undefined : p.raw}
+        >
+          {shownLink}
         </div>
       </div>
       <button

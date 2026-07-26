@@ -80,6 +80,26 @@ export function plural(
   return many;
 }
 
+/* ------------------------------- Demo masking ------------------------------- */
+
+// HIDDEN stands in for a value that demo mode is masking. Values are replaced
+// outright rather than blurred with CSS: a blur still carries the original
+// pixels into a screenshot, and it reads as a rendering glitch.
+export const HIDDEN = "••••••••";
+
+// mask replaces a value with HIDDEN while demo mode is on.
+export function mask(hide: boolean, value: string): string {
+  return hide ? HIDDEN : value;
+}
+
+// maskLink keeps a share link's scheme so the protocol is still recognisable,
+// and hides everything after it — that tail is the address, uuid and password.
+export function maskLink(hide: boolean, link: string): string {
+  if (!hide) return link;
+  const i = link.indexOf("://");
+  return i > 0 ? link.slice(0, i + 3) + HIDDEN : HIDDEN;
+}
+
 // subDomain extracts the host from a subscription URL for display.
 export function subDomain(url: string): string {
   try {

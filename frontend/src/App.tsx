@@ -54,6 +54,7 @@ const defaultSettings: AppSettings = {
   launchAtStartup: false,
   minimizeToTray: false,
   devMode: false,
+  demoMode: false,
   theme: "graphite",
   accent: "indigo",
   savedColors: [],
@@ -243,6 +244,7 @@ export default function App() {
               profiles={profiles}
               subscriptions={subscriptions}
               selectedGroup={selectedGroup}
+              hideData={settings.demoMode}
               onImportLink={handleImport}
               onAddSub={handleAddSub}
               onUpdateSub={handleUpdateSub}
@@ -257,6 +259,7 @@ export default function App() {
               selectedGroup={selectedGroup}
               activeId={settings.activeProfileId}
               connected={connected}
+              hideData={settings.demoMode}
               onActivate={handleActivate}
             />
           )}

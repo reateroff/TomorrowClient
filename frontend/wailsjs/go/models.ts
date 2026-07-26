@@ -4,6 +4,7 @@ export namespace main {
 	    version: string;
 	    copyright: string;
 	    builtWith: string;
+	    license: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -14,6 +15,7 @@ export namespace main {
 	        this.version = source["version"];
 	        this.copyright = source["copyright"];
 	        this.builtWith = source["builtWith"];
+	        this.license = source["license"];
 	    }
 	}
 	export class PingResult {

@@ -43,6 +43,10 @@ type AppInfo struct {
 	Version   string `json:"version"`
 	Copyright string `json:"copyright"`
 	BuiltWith string `json:"builtWith"`
+	// License is stated in the UI because the app links sing-box, which is
+	// GPL-3.0-or-later: the terms have to reach the person running it, not
+	// just whoever reads the repository.
+	License string `json:"license"`
 }
 
 // GetAppInfo returns static build/about information for the UI.
@@ -51,6 +55,7 @@ func (a *App) GetAppInfo() AppInfo {
 		Version:   Version,
 		Copyright: fmt.Sprintf("© %d TomorrowClient", time.Now().Year()),
 		BuiltWith: "Wails · Go · React · sing-box",
+		License:   "AGPL-3.0-or-later",
 	}
 }
 

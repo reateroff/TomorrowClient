@@ -60,6 +60,7 @@ export interface AppInfo {
   version: string;
   copyright: string;
   builtWith: string;
+  license: string;
 }
 
 export interface RoutingRule {

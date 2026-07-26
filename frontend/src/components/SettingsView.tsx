@@ -1738,9 +1738,14 @@ function About({
         </div>
       </div>
 
-      <p className="text-center font-mono text-[11px] text-text-faint">
-        {appInfo?.copyright ?? "© TomorrowClient"}
-      </p>
+      <div className="flex flex-col items-center gap-1 font-mono text-[11px] text-text-faint">
+        <span>{appInfo?.copyright ?? "© TomorrowClient"}</span>
+        {appInfo?.license && (
+          <span>
+            Лицензия {appInfo.license} · исходный код открыт
+          </span>
+        )}
+      </div>
     </div>
   );
 }

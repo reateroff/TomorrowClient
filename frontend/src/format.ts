@@ -48,9 +48,9 @@ export function formatSpeed(bytesPerSec: number): string {
   return `${formatBytes(bytesPerSec)}/с`;
 }
 
-// formatUptime renders the time since a unix-ms start, growing a field at a
-// time: "07" for the first minute, then "1:07", then "1:01:07". A fixed
-// HH:MM:SS would spend the first minute showing two zeroed-out fields.
+// formatUptime renders the time since a unix-ms start, growing a digit at a
+// time: "0" … "9" … "10" … "1:07" … "1:01:07". Nothing is padded until there is
+// a larger field to its left that needs the alignment.
 export function formatUptime(connectedAt: number, now: number): string {
   const secs = connectedAt
     ? Math.max(0, Math.floor((now - connectedAt) / 1000))
@@ -63,7 +63,7 @@ export function formatUptime(connectedAt: number, now: number): string {
 
   if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
   if (m > 0) return `${m}:${pad(s)}`;
-  return pad(s);
+  return String(s);
 }
 
 // plural picks the Russian form for n: 1 сервер / 2 сервера / 5 серверов.

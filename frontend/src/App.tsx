@@ -47,7 +47,7 @@ const defaultSettings: AppSettings = {
   dns: "1.1.1.1",
   dnsFallback: "8.8.8.8",
   tunName: "TomorrowTun",
-  stack: "gvisor",
+  stack: "mixed",
   mtu: 0,
   rules: [],
   autoConnect: false,

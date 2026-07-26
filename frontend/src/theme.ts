@@ -18,7 +18,12 @@ export interface ThemePreset {
   };
 }
 
-// Six dark presets, no harsh pure white text. "graphite" is the shipped default.
+// How many presets the Appearance screen shows before "показать ещё".
+export const THEMES_VISIBLE = 6;
+
+// Dark presets, no harsh pure white text. "graphite" is the shipped default and
+// the first THEMES_VISIBLE entries are the ones shown unexpanded, so order
+// matters: keep the plainest six first.
 export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "graphite",
@@ -102,6 +107,91 @@ export const THEME_PRESETS: ThemePreset[] = [
       text: "#e5e9f0",
       textMuted: "#94a0b5",
       textFaint: "#647089",
+    },
+  },
+  // --- Revealed by "показать ещё" ---
+  {
+    id: "plum",
+    name: "Слива",
+    colors: {
+      bg: "#100c14",
+      surface: "#18121d",
+      surface2: "#211926",
+      border: "#2f2436",
+      borderSoft: "#251c2b",
+      text: "#eae3ee",
+      textMuted: "#a397ab",
+      textFaint: "#726579",
+    },
+  },
+  {
+    id: "ocean",
+    name: "Океан",
+    colors: {
+      bg: "#081114",
+      surface: "#0e1a1f",
+      surface2: "#15242b",
+      border: "#21353d",
+      borderSoft: "#1a2b32",
+      text: "#e2eef1",
+      textMuted: "#8fa6ad",
+      textFaint: "#5f767e",
+    },
+  },
+  {
+    id: "moss",
+    name: "Мох",
+    colors: {
+      bg: "#0c110d",
+      surface: "#121a14",
+      surface2: "#1a241c",
+      border: "#26332a",
+      borderSoft: "#1e2921",
+      text: "#e4ebe4",
+      textMuted: "#97a598",
+      textFaint: "#67756a",
+    },
+  },
+  {
+    id: "wine",
+    name: "Вино",
+    colors: {
+      bg: "#120c0e",
+      surface: "#1b1214",
+      surface2: "#241a1c",
+      border: "#342528",
+      borderSoft: "#291d20",
+      text: "#eee3e5",
+      textMuted: "#ab979a",
+      textFaint: "#7a6568",
+    },
+  },
+  {
+    id: "steel",
+    name: "Сталь",
+    colors: {
+      bg: "#0f1216",
+      surface: "#171b21",
+      surface2: "#1f242c",
+      border: "#2d343e",
+      borderSoft: "#242a33",
+      text: "#e6e9ee",
+      textMuted: "#99a1ae",
+      textFaint: "#69727f",
+    },
+  },
+  {
+    id: "smoke",
+    name: "Дым",
+    colors: {
+      bg: "#111010",
+      surface: "#1a1818",
+      surface2: "#232020",
+      border: "#322e2e",
+      borderSoft: "#282525",
+      text: "#eae7e5",
+      textMuted: "#a49f9c",
+      textFaint: "#736e6b",
     },
   },
 ];

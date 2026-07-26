@@ -41,6 +41,7 @@ import {
   FONTS,
   RADII,
   ANIMATIONS,
+  THEMES_VISIBLE,
   isHex,
   hexToHsv,
   hsvToHex,
@@ -253,32 +254,10 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
     <div className="flex max-w-2xl flex-col gap-7">
       <Section icon={<Palette size={16} />} title="Тема">
-        <div className="grid grid-cols-3 gap-3">
-          {THEME_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => set({ theme: p.id })}
-              className={`flex flex-col gap-2 rounded-lg border p-3 text-left transition ${
-                settings.theme === p.id
-                  ? "border-accent/60 bg-surface-2"
-                  : "border-border bg-surface hover:bg-surface-2/60"
-              }`}
-            >
-              <div className="flex gap-1">
-                {[p.colors.bg, p.colors.surface2, p.colors.border].map(
-                  (c, i) => (
-                    <span
-                      key={i}
-                      className="h-6 flex-1 rounded"
-                      style={{ background: c }}
-                    />
-                  )
-                )}
-              </div>
-              <span className="text-xs text-text">{p.name}</span>
-            </button>
-          ))}
-        </div>
+        <ThemePicker
+          value={settings.theme}
+          onChange={(id) => set({ theme: id })}
+        />
       </Section>
 
       <Section icon={<Zap size={16} />} title="Акцент">
@@ -347,15 +326,18 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
             <button
               key={r.id}
               onClick={() => set({ radius: r.id })}
-              className={`flex flex-col items-center gap-2 border px-3 py-3 text-xs transition ${
+              className={`flex flex-col items-center gap-2.5 border px-3 py-3.5 text-xs transition ${
                 settings.radius === r.id
                   ? "border-accent/60 bg-surface-2 text-text"
                   : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
               }`}
               style={{ borderRadius: r.value }}
             >
+              {/* 56px tall on purpose: the old 28px swatch was fully rounded at
+                  14px already, so "Мягкие" and "Круглые" drew the same shape. A
+                  radius only reads as different below half the height. */}
               <span
-                className="h-7 w-12 border border-text-faint"
+                className="h-14 w-20 border border-text-faint"
                 style={{ borderRadius: r.value }}
               />
               {r.name}
@@ -391,8 +373,74 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
   );
 }
 
-// AnimationPicker lists the entrance presets and replays a preview tile on every
-// pick, so the choice can be judged without navigating away.
+// ThemePicker shows the plain presets first and keeps the rest behind a toggle,
+// so the list does not open as a wall of twelve swatches.
+function ThemePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hidden = THEME_PRESETS.length - THEMES_VISIBLE;
+
+  // A theme picked earlier from the hidden half must still be visible, or it
+  // would look unselected until the user expanded the list again.
+  const selectedIsHidden =
+    THEME_PRESETS.findIndex((p) => p.id === value) >= THEMES_VISIBLE;
+  const shown =
+    expanded || selectedIsHidden
+      ? THEME_PRESETS
+      : THEME_PRESETS.slice(0, THEMES_VISIBLE);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        {shown.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => onChange(p.id)}
+            className={`flex flex-col gap-2 rounded-lg border p-3 text-left transition ${
+              value === p.id
+                ? "border-accent/60 bg-surface-2"
+                : "border-border bg-surface hover:bg-surface-2/60"
+            }`}
+          >
+            <div className="flex gap-1">
+              {[p.colors.bg, p.colors.surface2, p.colors.border].map((c, i) => (
+                <span
+                  key={i}
+                  className="h-6 flex-1 rounded"
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-text">{p.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {hidden > 0 && !selectedIsHidden && (
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface py-2 text-xs text-text-muted transition hover:bg-surface-2/60 hover:text-text"
+        >
+          <ChevronDown
+            size={14}
+            className={`transition-transform duration-200 ${
+              expanded ? "rotate-180" : ""
+            }`}
+          />
+          {expanded ? "Свернуть" : `Показать ещё ${hidden}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// AnimationPicker lists the entrance presets. No preview tile: the choice is
+// visible on the next screen change anyway, and the user asked for it gone.
 function AnimationPicker({
   value,
   onChange,
@@ -400,64 +448,22 @@ function AnimationPicker({
   value: string;
   onChange: (id: string) => void;
 }) {
-  // Bumping the key remounts the preview, which restarts its CSS animation —
-  // re-adding a class would not retrigger it.
-  const [replay, setReplay] = useState(0);
-  const active = ANIMATIONS.find((a) => a.id === value) ?? ANIMATIONS[0];
-
-  const pick = (id: string) => {
-    onChange(id);
-    setReplay((n) => n + 1);
-  };
-
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-3 gap-2">
-        {ANIMATIONS.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => pick(a.id)}
-            className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left transition ${
-              value === a.id
-                ? "border-accent/60 bg-surface-2 text-text"
-                : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
-            }`}
-          >
-            <span className="text-sm">{a.name}</span>
-            <span className="text-[11px] text-text-faint">{a.desc}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-3 overflow-hidden rounded-lg border border-border bg-bg px-4 py-3">
-        <div
-          key={replay}
-          // The preview runs the picked preset directly, independent of the
-          // root variables, so it previews even before the setting is saved.
-          style={{
-            animation:
-              active.keyframes === "none"
-                ? undefined
-                : `${active.keyframes} ${active.duration} cubic-bezier(0.22,1,0.36,1) both`,
-          }}
-          className="flex items-center gap-2.5"
-        >
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/15 text-accent">
-            <Sparkles size={15} />
-          </span>
-          <div>
-            <div className="text-sm text-text">Так открываются экраны</div>
-            <div className="text-[11px] text-text-faint">{active.name}</div>
-          </div>
-        </div>
+    <div className="grid grid-cols-3 gap-2">
+      {ANIMATIONS.map((a) => (
         <button
-          onClick={() => setReplay((n) => n + 1)}
-          title="Повторить"
-          className="ml-auto shrink-0 rounded-md p-1.5 text-text-faint transition hover:bg-surface-2 hover:text-text"
+          key={a.id}
+          onClick={() => onChange(a.id)}
+          className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left transition ${
+            value === a.id
+              ? "border-accent/60 bg-surface-2 text-text"
+              : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+          }`}
         >
-          <RefreshCw size={14} />
+          <span className="text-sm">{a.name}</span>
+          <span className="text-[11px] text-text-faint">{a.desc}</span>
         </button>
-      </div>
+      ))}
     </div>
   );
 }

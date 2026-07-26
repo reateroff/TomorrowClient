@@ -26,7 +26,7 @@ func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 		"address":        []any{"172.19.0.1/30"},
 		"auto_route":     true,
 		"strict_route":   true,
-		"stack":          firstNonEmpty(s.Stack, "gvisor"),
+		"stack":          firstNonEmpty(s.Stack, "mixed"),
 	}
 	if s.MTU > 0 {
 		tun["mtu"] = s.MTU

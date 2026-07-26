@@ -10,10 +10,15 @@ import {
   Check,
   Gauge,
   CalendarClock,
+  ListTree,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
 import { formatTraffic, formatExpiry, subDomain, plural } from "../format";
 import AddModal from "./AddModal";
+import LinksModal from "./LinksModal";
+import Menu from "./Menu";
+import type { MenuItem } from "./Menu";
+import { push } from "./Toasts";
 
 interface Props {
   profiles: Profile[];
@@ -42,6 +47,8 @@ export default function ProfilesView({
 }: Props) {
   const [adding, setAdding] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
+  // Which group's share links are open: a subscription id, "manual", or null.
+  const [linksOf, setLinksOf] = useState<string | null>(null);
 
   const manual = profiles.filter((p) => !p.subId);
   const bySub = (id: string) => profiles.filter((p) => p.subId === id);
@@ -54,6 +61,18 @@ export default function ProfilesView({
       setUpdating(null);
     }
   };
+
+  const copyUrl = async (url: string) => {
+    await navigator.clipboard.writeText(url);
+    push("Ссылка подписки скопирована", "ok");
+  };
+
+  const linksTitle =
+    linksOf === "manual"
+      ? "Добавленные вручную"
+      : subscriptions.find((s) => s.id === linksOf)?.name ?? "";
+  const linksProfiles =
+    linksOf === "manual" ? manual : linksOf ? bySub(linksOf) : [];
 
   const empty = profiles.length === 0 && subscriptions.length === 0;
 
@@ -100,6 +119,13 @@ export default function ProfilesView({
                 count={manual.length}
                 selected={selectedGroup === "manual"}
                 onSelect={() => onSelectGroup("manual")}
+                menu={[
+                  {
+                    label: "Ссылки серверов",
+                    icon: <ListTree size={14} />,
+                    onClick: () => setLinksOf("manual"),
+                  },
+                ]}
               />
             )}
             {subscriptions.map((sub) => (
@@ -113,8 +139,29 @@ export default function ProfilesView({
                 selected={selectedGroup === sub.id}
                 onSelect={() => onSelectGroup(sub.id)}
                 updating={updating === sub.id}
-                onUpdate={() => runUpdate(sub.id)}
-                onDelete={() => onDeleteSub(sub.id)}
+                menu={[
+                  {
+                    label: "Обновить",
+                    icon: <RefreshCw size={14} />,
+                    onClick: () => runUpdate(sub.id),
+                  },
+                  {
+                    label: "Копировать ссылку",
+                    icon: <Link2 size={14} />,
+                    onClick: () => copyUrl(sub.url),
+                  },
+                  {
+                    label: "Ссылки серверов",
+                    icon: <ListTree size={14} />,
+                    onClick: () => setLinksOf(sub.id),
+                  },
+                  {
+                    label: "Удалить",
+                    icon: <Trash2 size={14} />,
+                    onClick: () => onDeleteSub(sub.id),
+                    danger: true,
+                  },
+                ]}
               />
             ))}
           </div>
@@ -126,6 +173,14 @@ export default function ProfilesView({
           onClose={() => setAdding(false)}
           onImportLink={onImportLink}
           onAddSub={onAddSub}
+        />
+      )}
+
+      {linksOf && (
+        <LinksModal
+          title={linksTitle}
+          profiles={linksProfiles}
+          onClose={() => setLinksOf(null)}
         />
       )}
     </div>
@@ -144,8 +199,7 @@ function GroupCard({
   selected,
   onSelect,
   updating,
-  onUpdate,
-  onDelete,
+  menu,
 }: {
   icon: React.ReactNode;
   name: string;
@@ -155,8 +209,7 @@ function GroupCard({
   selected: boolean;
   onSelect: () => void;
   updating?: boolean;
-  onUpdate?: () => void;
-  onDelete?: () => void;
+  menu?: MenuItem[];
 }) {
   return (
     <div
@@ -213,28 +266,12 @@ function GroupCard({
         </span>
       )}
 
-      {onUpdate && (
-        <button
-          onClick={onUpdate}
-          disabled={updating}
-          className="no-drag rounded-md p-1.5 text-text-faint transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
-          aria-label="Обновить"
-        >
-          {updating ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <RefreshCw size={15} />
-          )}
-        </button>
-      )}
-      {onDelete && (
-        <button
-          onClick={onDelete}
-          className="no-drag rounded-md p-1.5 text-text-faint transition hover:bg-danger/15 hover:text-danger"
-          aria-label="Удалить подписку"
-        >
-          <Trash2 size={15} />
-        </button>
+      {/* While a refresh is in flight the spinner replaces the menu, so the row
+          still shows what it is doing. */}
+      {updating ? (
+        <Loader2 size={15} className="shrink-0 animate-spin text-text-faint" />
+      ) : (
+        menu && <Menu items={menu} />
       )}
     </div>
   );

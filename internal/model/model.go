@@ -183,7 +183,7 @@ func DefaultSettings() AppSettings {
 		DNS:         "1.1.1.1",
 		DNSFallback: "8.8.8.8",
 		TunName:     DefaultTunName,
-		Stack:       "gvisor",
+		Stack:       "mixed",
 		MTU:         0,
 		Theme:       "graphite",
 		Accent:      "indigo",

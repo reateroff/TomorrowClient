@@ -80,6 +80,15 @@ export function plural(
   return many;
 }
 
+// latencyTone grades an ICMP round trip, in one place so the main screen and
+// the configs list cannot drift apart.
+export function latencyTone(ms: number): "ok" | "amber" | "danger" {
+  if (ms < 0) return "danger";
+  if (ms < 150) return "ok";
+  if (ms < 400) return "amber";
+  return "danger";
+}
+
 /* ------------------------------- Demo masking ------------------------------- */
 
 // HIDDEN stands in for a value that demo mode is masking. Values are replaced

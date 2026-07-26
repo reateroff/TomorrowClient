@@ -16,6 +16,20 @@ export namespace main {
 	        this.builtWith = source["builtWith"];
 	    }
 	}
+	export class PingResult {
+	    latencyMs: number;
+	    ok: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PingResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.latencyMs = source["latencyMs"];
+	        this.ok = source["ok"];
+	    }
+	}
 	export class ProcessInfo {
 	    name: string;
 	    icon: string;

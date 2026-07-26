@@ -1,11 +1,15 @@
 # Build output
 build/bin
 
-# Core binaries + WinTun driver are fetched via scripts/fetch-cores.sh,
-# never committed (large, and licensed separately).
+# WinTun driver is fetched via scripts/fetch-wintun.sh, never committed
+# (licensed separately). sing-box itself is linked into the binary.
 *.exe
 wintun.dll
 build/windows/wintun/
+
+# sing-box writes its cache next to the running process, which during
+# `wails dev` is the repo root.
+cache.db
 
 # Frontend
 node_modules

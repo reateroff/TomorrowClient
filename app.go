@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -131,22 +129,74 @@ func (a *App) DeleteProfile(id string) error {
 	return a.store.DeleteProfile(id)
 }
 
-// PingProfile TCP-dials a profile's server and returns the round-trip latency
-// in milliseconds, or -1 if the server is unreachable within the timeout. This
-// is a reachability check of the endpoint, not a full proxy handshake.
-func (a *App) PingProfile(id string) int {
+// PingResult is one server's latency cell.
+type PingResult struct {
+	// LatencyMs is the ICMP round trip, or -1 when the host does not answer
+	// echo requests. Plenty of servers filter ICMP while working perfectly, so
+	// -1 on its own is not a failure — read it together with OK.
+	LatencyMs int `json:"latencyMs"`
+	// OK reports whether a real request actually made it through the server.
+	OK bool `json:"ok"`
+}
+
+// PingLatency measures only the ICMP round trip to a profile's server.
+//
+// The main screen refreshes this on a short timer, so it has to stay cheap: a
+// few 32-byte echo packets and nothing else. PingProfile additionally stands up
+// a private core and pushes a real request through the server, which is the
+// right thing when judging servers you are not connected to, and pure waste for
+// the one already carrying your traffic — if it were broken there would be no
+// connection to report on.
+func (a *App) PingLatency(id string) int {
 	p, ok := a.store.Profile(id)
-	if !ok || p.Address == "" || p.Port == 0 {
+	if !ok || p.Address == "" {
 		return -1
 	}
-	addr := net.JoinHostPort(p.Address, strconv.Itoa(p.Port))
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	d, err := vpn.PingICMP(p.Address)
 	if err != nil {
 		return -1
 	}
-	_ = conn.Close()
-	return int(time.Since(start).Milliseconds())
+	return int(d.Milliseconds())
+}
+
+// PingProfile reports a profile's network latency and whether it works at all.
+//
+// The two are measured separately on purpose. ICMP gives the honest round trip,
+// which is what a latency figure should say; timing a request through the proxy
+// instead would fold in TCP setup, the TLS handshake and the far-side fetch, and
+// read several hundred milliseconds on a link that is really a few tens. But
+// ICMP says nothing about whether the profile is usable, so a real request
+// through the server decides that separately — it only completes when the
+// transport, TLS and credentials are all good.
+func (a *App) PingProfile(id string) PingResult {
+	p, ok := a.store.Profile(id)
+	if !ok || p.Address == "" || p.Port == 0 {
+		return PingResult{LatencyMs: -1}
+	}
+
+	var (
+		wg      sync.WaitGroup
+		latency = -1
+		works   bool
+	)
+	wg.Add(2)
+
+	// Run both together: a server that filters ICMP would otherwise hold up the
+	// verdict for the full echo timeout before the real check even started.
+	go func() {
+		defer wg.Done()
+		if d, err := vpn.PingICMP(p.Address); err == nil {
+			latency = int(d.Milliseconds())
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := vpn.ProbeLatency(p)
+		works = err == nil
+	}()
+
+	wg.Wait()
+	return PingResult{LatencyMs: latency, OK: works}
 }
 
 // --- Subscriptions ---
@@ -169,13 +219,19 @@ func (a *App) AddSubscription(name, url string) (model.Subscription, error) {
 		Name: strings.TrimSpace(name),
 		URL:  url,
 	}
-	if s.Name == "" {
-		s.Name = subNameFromURL(url)
-	}
 
 	profiles, info, err := sub.Fetch(url, s.ID)
 	if err != nil {
 		return model.Subscription{}, err
+	}
+
+	// What the user typed wins; otherwise use the name the provider reports,
+	// and only fall back to the URL host when there is nothing better.
+	if s.Name == "" {
+		s.Name = info.Title
+	}
+	if s.Name == "" {
+		s.Name = subNameFromURL(url)
 	}
 	if err := a.store.ReplaceSubProfiles(s.ID, profiles); err != nil {
 		return model.Subscription{}, err
@@ -200,6 +256,11 @@ func (a *App) UpdateSubscription(id string) (model.Subscription, error) {
 	if err != nil {
 		return model.Subscription{}, err
 	}
+	// Adopt the provider's name only if the current one was our own fallback to
+	// the URL host — a name the user chose must survive a refresh.
+	if info.Title != "" && s.Name == subNameFromURL(s.URL) {
+		s.Name = info.Title
+	}
 	if err := a.store.ReplaceSubProfiles(s.ID, profiles); err != nil {
 		return model.Subscription{}, err
 	}
@@ -213,7 +274,7 @@ func (a *App) UpdateSubscription(id string) (model.Subscription, error) {
 }
 
 // applyUserinfo copies traffic/expiry metadata from a fetch into a subscription.
-func applyUserinfo(s *model.Subscription, info sub.Userinfo) {
+func applyUserinfo(s *model.Subscription, info sub.Meta) {
 	s.Upload = info.Upload
 	s.Download = info.Download
 	s.Total = info.Total

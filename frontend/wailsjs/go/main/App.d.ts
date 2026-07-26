@@ -37,7 +37,9 @@ export function ImportLink(arg1:string):Promise<model.Profile>;
 
 export function ListProcesses():Promise<Array<main.ProcessInfo>>;
 
-export function PingProfile(arg1:string):Promise<number>;
+export function PingLatency(arg1:string):Promise<number>;
+
+export function PingProfile(arg1:string):Promise<main.PingResult>;
 
 export function PreviewConfig():Promise<string>;
 

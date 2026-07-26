@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,41 +25,50 @@ const userAgent = "TomorrowClient/1.0 (sing-box)"
 // fetchTimeout bounds the whole request.
 const fetchTimeout = 20 * time.Second
 
-// Userinfo holds the traffic/expiry metadata some providers report via the
-// Subscription-Userinfo response header. Zero values mean "not reported".
-type Userinfo struct {
+// Meta is what a provider tells us about a subscription besides the servers
+// themselves. Zero values mean "not reported".
+type Meta struct {
+	// Traffic and expiry, from the Subscription-Userinfo header.
 	Upload   int64
 	Download int64
 	Total    int64
 	Expire   int64
+	// Title is the subscription's own display name, from profile-title or the
+	// Content-Disposition filename. Without it the UI has nothing to show but
+	// the URL host.
+	Title string
 }
+
+// maxTitleLen keeps a provider from pushing an essay into the sidebar.
+const maxTitleLen = 64
 
 // Fetch downloads the subscription at url and parses it into profiles. Each
 // returned profile has its SubID set to subID so it can be replaced on update.
 // Individual links that fail to parse are skipped rather than failing the
 // whole import. The provider's Subscription-Userinfo header (if any) is
 // returned alongside as traffic/expiry metadata.
-func Fetch(url, subID string) ([]model.Profile, Userinfo, error) {
+func Fetch(url, subID string) ([]model.Profile, Meta, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, Userinfo{}, fmt.Errorf("bad subscription url: %w", err)
+		return nil, Meta{}, fmt.Errorf("bad subscription url: %w", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, Userinfo{}, fmt.Errorf("fetch subscription: %w", err)
+		return nil, Meta{}, fmt.Errorf("fetch subscription: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, Userinfo{}, fmt.Errorf("subscription returned HTTP %d", resp.StatusCode)
+		return nil, Meta{}, fmt.Errorf("subscription returned HTTP %d", resp.StatusCode)
 	}
 
 	info := parseUserinfo(resp.Header.Get("Subscription-Userinfo"))
+	info.Title = parseTitle(resp.Header)
 
 	// Cap the body to a sane size (4 MiB) to avoid runaway responses.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -88,8 +98,8 @@ func Fetch(url, subID string) ([]model.Profile, Userinfo, error) {
 
 // parseUserinfo reads the "upload=..; download=..; total=..; expire=.." header
 // value into a Userinfo. Missing or malformed fields stay zero.
-func parseUserinfo(h string) Userinfo {
-	var info Userinfo
+func parseUserinfo(h string) Meta {
+	var info Meta
 	if h == "" {
 		return info
 	}
@@ -114,6 +124,40 @@ func parseUserinfo(h string) Userinfo {
 		}
 	}
 	return info
+}
+
+// parseTitle reads the subscription's display name from the headers providers
+// actually use for it: "profile-title" (plain, or wrapped as "base64:...") and,
+// failing that, the filename in Content-Disposition. Without this the client
+// has nothing to name a subscription but the URL host.
+func parseTitle(h http.Header) string {
+	if t := strings.TrimSpace(h.Get("profile-title")); t != "" {
+		if enc, ok := strings.CutPrefix(t, "base64:"); ok {
+			b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(enc))
+			if err != nil {
+				return ""
+			}
+			return clampTitle(string(b))
+		}
+		return clampTitle(t)
+	}
+
+	if cd := h.Get("Content-Disposition"); cd != "" {
+		// ParseMediaType also decodes the RFC 5987 filename*=UTF-8''… form.
+		if _, params, err := mime.ParseMediaType(cd); err == nil {
+			return clampTitle(params["filename"])
+		}
+	}
+	return ""
+}
+
+// clampTitle trims a provider-supplied name down to something displayable.
+func clampTitle(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > maxTitleLen {
+		s = strings.TrimSpace(s[:maxTitleLen])
+	}
+	return s
 }
 
 // extractLinks turns a subscription body into a slice of share links. The body

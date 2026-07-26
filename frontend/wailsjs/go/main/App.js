@@ -70,6 +70,10 @@ export function ListProcesses() {
   return window['go']['main']['App']['ListProcesses']();
 }
 
+export function PingLatency(arg1) {
+  return window['go']['main']['App']['PingLatency'](arg1);
+}
+
 export function PingProfile(arg1) {
   return window['go']['main']['App']['PingProfile'](arg1);
 }

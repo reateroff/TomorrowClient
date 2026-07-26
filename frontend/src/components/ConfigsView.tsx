@@ -9,9 +9,10 @@ import {
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
 import { describeChain } from "../proto";
-import { plural, HIDDEN } from "../format";
+import { plural, HIDDEN, latencyTone } from "../format";
 import { stripCountryPrefix } from "../flags";
 import { PingProfile } from "../../wailsjs/go/main/App";
+import type { main } from "../../wailsjs/go/models";
 import FlagChip from "./FlagChip";
 
 interface Props {
@@ -24,9 +25,8 @@ interface Props {
   onActivate: (id: string) => void;
 }
 
-// Latency in ms per profile id: >=0 reachable, -1 unreachable, undefined = not
-// yet tested.
-type PingMap = Record<string, number>;
+// Ping result per profile id; undefined means "not tested yet".
+type PingMap = Record<string, main.PingResult>;
 
 // Shows the locations (servers) of the group picked on the Profiles tab, with a
 // ping button that TCP-tests every server's reachability.
@@ -81,13 +81,13 @@ export default function ConfigsView({
     try {
       await Promise.all(
         servers.map(async (p) => {
-          let ms = -1;
+          let res: main.PingResult = { latencyMs: -1, ok: false };
           try {
-            ms = await PingProfile(p.id);
+            res = (await PingProfile(p.id)) as main.PingResult;
           } catch {
-            ms = -1;
+            /* a failed call reads the same as a dead server */
           }
-          setPings((prev) => ({ ...prev, [p.id]: ms }));
+          setPings((prev) => ({ ...prev, [p.id]: res }));
         })
       );
     } finally {
@@ -115,6 +115,7 @@ export default function ConfigsView({
           <button
             onClick={pingAll}
             disabled={pinging}
+            title="Отправляет реальный запрос через каждый сервер — измеряет то, что действительно работает, а не просто открытый порт"
             className="no-drag flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
           >
             {pinging ? (
@@ -155,6 +156,7 @@ export default function ConfigsView({
               connected={connected}
               hideData={hideData}
               ping={pings[p.id]}
+              pending={pinging && pings[p.id] === undefined}
               onActivate={onActivate}
             />
           ))}
@@ -172,13 +174,15 @@ function LocationRow({
   connected,
   hideData,
   ping,
+  pending,
   onActivate,
 }: {
   profile: Profile;
   active: boolean;
   connected: boolean;
   hideData: boolean;
-  ping?: number;
+  ping?: main.PingResult;
+  pending: boolean;
   onActivate: (id: string) => void;
 }) {
   return (
@@ -213,7 +217,13 @@ function LocationRow({
         </div>
       </button>
 
-      {ping !== undefined && <PingBadge ms={ping} />}
+      {/* A probe takes real time now, and the backend runs only a few at once,
+          so rows waiting their turn say so instead of looking untested. */}
+      {pending ? (
+        <Loader2 size={13} className="shrink-0 animate-spin text-text-faint" />
+      ) : (
+        ping !== undefined && <PingBadge result={ping} />
+      )}
 
       {active && connected && (
         <span className="flex items-center gap-1 rounded-md bg-ok/15 px-2 py-1 font-mono text-[10px] text-ok">
@@ -225,20 +235,38 @@ function LocationRow({
   );
 }
 
-// PingBadge colours the latency: green fast, amber slow, red unreachable.
-function PingBadge({ ms }: { ms: number }) {
-  if (ms < 0) {
+// PingBadge shows the ICMP round trip, or n/a when the profile itself does not
+// work. The two states are distinct on purpose: a server can answer ICMP and
+// still be unusable, and it can work perfectly while filtering ICMP.
+function PingBadge({ result }: { result: main.PingResult }) {
+  if (!result.ok) {
     return (
-      <span className="shrink-0 rounded-md bg-danger/15 px-2 py-1 font-mono text-[10px] text-danger">
+      <span
+        title="Через этот сервер не проходит запрос — профиль не работает"
+        className="shrink-0 rounded-md bg-danger/15 px-2 py-1 font-mono text-[10px] text-danger"
+      >
+        n/a
+      </span>
+    );
+  }
+  if (result.latencyMs < 0) {
+    return (
+      <span
+        title="Сервер работает, но не отвечает на ICMP — задержку измерить нечем"
+        className="shrink-0 rounded-md bg-surface-2 px-2 py-1 font-mono text-[10px] text-text-faint"
+      >
         —
       </span>
     );
   }
-  const tone =
-    ms < 150 ? "text-ok bg-ok/15" : ms < 400 ? "text-amber bg-amber/15" : "text-danger bg-danger/15";
+  const tone = {
+    ok: "text-ok bg-ok/15",
+    amber: "text-amber bg-amber/15",
+    danger: "text-danger bg-danger/15",
+  }[latencyTone(result.latencyMs)];
   return (
     <span className={`shrink-0 rounded-md px-2 py-1 font-mono text-[10px] ${tone}`}>
-      {ms} мс
+      {result.latencyMs} мс
     </span>
   );
 }

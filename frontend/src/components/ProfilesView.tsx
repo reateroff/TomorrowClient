@@ -13,7 +13,7 @@ import {
   ListTree,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
-import { formatTraffic, formatExpiry, subDomain, plural, mask } from "../format";
+import { formatTraffic, formatExpiry, plural } from "../format";
 import AddModal from "./AddModal";
 import LinksModal from "./LinksModal";
 import Menu from "./Menu";
@@ -24,7 +24,7 @@ interface Props {
   profiles: Profile[];
   subscriptions: Subscription[];
   selectedGroup: string;
-  hideData: boolean; // demo mode: mask subscription domains and share links
+  hideData: boolean; // demo mode: mask the share links shown in the links dialog
   onImportLink: (raw: string) => Promise<void>;
   onAddSub: (name: string, url: string) => Promise<void>;
   onUpdateSub: (id: string) => Promise<void>;
@@ -135,7 +135,6 @@ export default function ProfilesView({
                 key={sub.id}
                 icon={<Rss size={16} />}
                 name={sub.name}
-                domain={mask(hideData, subDomain(sub.url))}
                 count={bySub(sub.id).length}
                 sub={sub}
                 selected={selectedGroup === sub.id}
@@ -196,7 +195,6 @@ export default function ProfilesView({
 function GroupCard({
   icon,
   name,
-  domain,
   count,
   sub,
   selected,
@@ -206,7 +204,6 @@ function GroupCard({
 }: {
   icon: React.ReactNode;
   name: string;
-  domain?: string;
   count: number;
   sub?: Subscription;
   selected: boolean;
@@ -234,14 +231,9 @@ function GroupCard({
           {icon}
         </span>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm text-text">{name}</span>
-            {domain && (
-              <span className="truncate font-mono text-xs text-text-faint">
-                {domain}
-              </span>
-            )}
-          </div>
+          {/* The subscription's own name only — the URL host used to sit next
+              to it, which was noise when the name was already derived from it. */}
+          <span className="block truncate text-sm text-text">{name}</span>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-text-faint">
             <span>
               {count} {plural(count, "сервер", "сервера", "серверов")}

@@ -8,9 +8,17 @@ import {
   ChevronRight,
 } from "lucide-react";
 import type { Status, Profile } from "../types";
-import { formatBytes, formatSpeed, formatUptime } from "../format";
+import {
+  formatBytes,
+  formatSpeed,
+  formatUptime,
+  latencyTone,
+} from "../format";
 import { stripCountryPrefix } from "../flags";
-import { PingProfile } from "../../wailsjs/go/main/App";
+import { PingLatency } from "../../wailsjs/go/main/App";
+
+// How often the live ping refreshes while connected.
+const PING_INTERVAL_MS = 5000;
 import FlagChip from "./FlagChip";
 
 interface Props {
@@ -48,8 +56,11 @@ export default function ConnectionView({
     return () => clearInterval(id);
   }, [isConnected]);
 
-  // Active ping: only while connected, refreshed every 3s. Reset on drop or
-  // when the active server changes.
+  // Live ping: only while connected, reset on drop or when the server changes.
+  // This is the ICMP-only call, a few 32-byte packets, so refreshing it every
+  // few seconds costs nothing measurable. The next run is scheduled after the
+  // previous one returns rather than on a fixed interval, so a server that
+  // makes us wait out the echo timeout cannot pile requests up.
   const pid = activeProfile?.id;
   useEffect(() => {
     if (!isConnected || !pid) {
@@ -57,15 +68,22 @@ export default function ConnectionView({
       return;
     }
     let alive = true;
+    let timer: number | undefined;
+
     const run = async () => {
-      const ms = await PingProfile(pid);
-      if (alive) setPing(ms);
+      try {
+        const ms = await PingLatency(pid);
+        if (alive) setPing(ms);
+      } catch {
+        if (alive) setPing(-1);
+      }
+      if (alive) timer = window.setTimeout(run, PING_INTERVAL_MS);
     };
     run();
-    const id = setInterval(run, 3000);
+
     return () => {
       alive = false;
-      clearInterval(id);
+      if (timer) clearTimeout(timer);
     };
   }, [isConnected, pid]);
 
@@ -152,7 +170,7 @@ export default function ConnectionView({
           <Stat
             icon={<Gauge size={12} className="text-text-faint" />}
             label="Пинг"
-            value={ping == null || ping < 0 ? "—" : `${ping} мс`}
+            value={pingLabel(ping)}
             valueCls={pingTone(ping)}
           />
           <Stat
@@ -183,11 +201,20 @@ export default function ConnectionView({
   );
 }
 
-function pingTone(ping: number | null): string {
-  if (ping == null || ping < 0) return "text-text";
-  if (ping < 150) return "text-ok";
-  if (ping < 400) return "text-amber";
-  return "text-danger";
+// A dash means the server keeps quiet about ICMP, which plenty of them do while
+// working fine — not an error, so it stays muted rather than red.
+function pingLabel(ms: number | null): string {
+  return ms == null || ms < 0 ? "—" : `${ms} мс`;
+}
+
+function pingTone(ms: number | null): string {
+  if (ms == null) return "text-text";
+  if (ms < 0) return "text-text-faint";
+  return {
+    ok: "text-ok",
+    amber: "text-amber",
+    danger: "text-danger",
+  }[latencyTone(ms)];
 }
 
 function Stat({

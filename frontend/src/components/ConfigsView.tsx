@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
 import { describeChain } from "../proto";
+import { plural } from "../format";
 import { stripCountryPrefix } from "../flags";
 import { PingProfile } from "../../wailsjs/go/main/App";
 import FlagChip from "./FlagChip";
@@ -72,23 +73,39 @@ export default function ConfigsView({
       servers.forEach((p) => delete next[p.id]);
       return next;
     });
-    await Promise.all(
-      servers.map(async (p) => {
-        const ms = await PingProfile(p.id);
-        setPings((prev) => ({ ...prev, [p.id]: ms }));
-      })
-    );
-    setPinging(false);
+    // Each probe swallows its own failure and try/finally releases the button:
+    // a single rejected call used to reject the whole Promise.all, skip
+    // setPinging(false) and leave the spinner turning forever.
+    try {
+      await Promise.all(
+        servers.map(async (p) => {
+          let ms = -1;
+          try {
+            ms = await PingProfile(p.id);
+          } catch {
+            ms = -1;
+          }
+          setPings((prev) => ({ ...prev, [p.id]: ms }));
+        })
+      );
+    } finally {
+      setPinging(false);
+    }
   };
 
   return (
-    <div className="animate-fade-up flex h-full flex-col p-6">
+    <div className="animate-view flex h-full flex-col p-6">
       <div className="mb-5 flex items-start justify-between">
         <div>
           <h1 className="text-base font-medium text-text">Конфигурации</h1>
           <p className="font-mono text-xs text-text-faint">
             {groupName
-              ? `${groupName} · ${servers.length} локац(ий)`
+              ? `${groupName} · ${servers.length} ${plural(
+                  servers.length,
+                  "локация",
+                  "локации",
+                  "локаций"
+                )}`
               : "выбор локации"}
           </p>
         </div>

@@ -73,7 +73,7 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
       onClick={onClose}
     >
       <div
-        className="animate-fade-up w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-2xl"
+        className="animate-view w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">

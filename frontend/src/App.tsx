@@ -44,8 +44,8 @@ const emptyStatus: Status = {
 const defaultSettings: AppSettings = {
   core: "sing-box",
   activeProfileId: "",
-  routingMode: "rules",
   dns: "1.1.1.1",
+  dnsFallback: "8.8.8.8",
   tunName: "TomorrowTun",
   stack: "gvisor",
   mtu: 0,
@@ -53,11 +53,14 @@ const defaultSettings: AppSettings = {
   autoConnect: false,
   launchAtStartup: false,
   minimizeToTray: false,
+  devMode: false,
   theme: "graphite",
   accent: "indigo",
+  savedColors: [],
   font: "inter",
   radius: "soft",
   navPosition: "left",
+  animation: "rise",
 };
 
 export default function App() {
@@ -92,7 +95,26 @@ export default function App() {
         prev = s.state;
       }
     });
-    return () => off();
+
+    // A factory reset wipes the store behind our back, so reload everything
+    // instead of leaving deleted servers on screen.
+    const offReset = EventsOn("app:datareset", () => {
+      setProfiles([]);
+      setSubscriptions([]);
+      setSelectedGroup("");
+      GetSettings().then((s) => {
+        const cfg = s as AppSettings;
+        setSettings(cfg);
+        applyTheme(cfg);
+      });
+      GetStatus().then((s) => setStatus(s as Status));
+      push("Все данные удалены", "info");
+    });
+
+    return () => {
+      off();
+      offReset();
+    };
   }, []);
 
   const refreshProfiles = useCallback(async () => {
@@ -206,7 +228,6 @@ export default function App() {
           {view === "connection" && (
             <ConnectionView
               status={status}
-              settings={settings}
               activeProfile={activeProfile}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}

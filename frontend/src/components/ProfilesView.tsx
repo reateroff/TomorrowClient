@@ -12,7 +12,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import type { Profile, Subscription } from "../types";
-import { formatTraffic, formatExpiry, subDomain } from "../format";
+import { formatTraffic, formatExpiry, subDomain, plural } from "../format";
 import AddModal from "./AddModal";
 
 interface Props {
@@ -58,12 +58,15 @@ export default function ProfilesView({
   const empty = profiles.length === 0 && subscriptions.length === 0;
 
   return (
-    <div className="animate-fade-up flex h-full flex-col p-6">
+    <div className="animate-view flex h-full flex-col p-6">
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-base font-medium text-text">Профили</h1>
           <p className="font-mono text-xs text-text-faint">
-            {profiles.length} сервер(ов) · {subscriptions.length} подписк(и)
+            {profiles.length}{" "}
+            {plural(profiles.length, "сервер", "сервера", "серверов")} ·{" "}
+            {subscriptions.length}{" "}
+            {plural(subscriptions.length, "подписка", "подписки", "подписок")}
           </p>
         </div>
         <button
@@ -184,7 +187,9 @@ function GroupCard({
             )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-text-faint">
-            <span>{count} сервер(ов)</span>
+            <span>
+              {count} {plural(count, "сервер", "сервера", "серверов")}
+            </span>
             {sub && (
               <>
                 <span className="inline-flex items-center gap-1">

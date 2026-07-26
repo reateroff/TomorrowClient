@@ -2,9 +2,8 @@
 // wider `string` types for some enums, so we narrow them here and cast at the
 // binding boundary in App.tsx.
 
-export type Core = "sing-box" | "xray";
+export type Core = "sing-box";
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
-export type RoutingMode = "global" | "rules";
 export type Protocol =
   | "vless"
   | "vmess"
@@ -67,14 +66,15 @@ export interface RoutingRule {
   type: "domain" | "ip" | "process";
   value: string;
   action: "proxy" | "direct" | "block";
+  icon?: string; // process rules only: PNG data URL of the app icon
 }
 
 export interface AppSettings {
   // Connection
   core: Core;
   activeProfileId: string;
-  routingMode: RoutingMode;
-  dns: string;
+  dns: string; // primary resolver, queried through the tunnel
+  dnsFallback: string; // resolver for names that bypass the tunnel
   tunName: string;
   stack: string; // "gvisor" | "system"
   mtu: number;
@@ -83,12 +83,15 @@ export interface AppSettings {
   autoConnect: boolean;
   launchAtStartup: boolean;
   minimizeToTray: boolean;
+  devMode: boolean; // unlocked by tapping the client name 10x in About
   // Appearance
   theme: string; // preset id
-  accent: string; // palette id
+  accent: string; // palette id or raw #rrggbb
+  savedColors: string[]; // user-saved custom accents
   font: string; // font id
   radius: string; // rounding id
   navPosition: string; // "left" | "top"
+  animation: string; // entrance animation preset id
 }
 
 export interface Stats {

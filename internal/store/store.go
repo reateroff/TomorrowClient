@@ -38,6 +38,9 @@ func New() (*Store, error) {
 	return s, nil
 }
 
+// Dir returns the directory holding the store's JSON files.
+func (s *Store) Dir() string { return s.dir }
+
 func (s *Store) settingsPath() string { return filepath.Join(s.dir, "settings.json") }
 func (s *Store) profilesPath() string { return filepath.Join(s.dir, "profiles.json") }
 func (s *Store) subsPath() string     { return filepath.Join(s.dir, "subscriptions.json") }
@@ -80,6 +83,26 @@ func (s *Store) SaveSettings(cfg model.AppSettings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings = cfg
+	return writeJSON(s.settingsPath(), s.settings)
+}
+
+// ResetAll wipes every stored profile, subscription and setting, returning the
+// app to a clean-install state. All three files are rewritten so nothing from
+// the previous installation survives a restart.
+func (s *Store) ResetAll() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.profiles = nil
+	s.subs = nil
+	s.settings = model.DefaultSettings()
+
+	if err := writeJSON(s.profilesPath(), []model.Profile{}); err != nil {
+		return err
+	}
+	if err := writeJSON(s.subsPath(), []model.Subscription{}); err != nil {
+		return err
+	}
 	return writeJSON(s.settingsPath(), s.settings)
 }
 

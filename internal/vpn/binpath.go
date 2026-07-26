@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 )
 
-// binDir returns the directory of the running executable, where the bundled
-// core binaries (sing-box.exe, xray.exe, tun2socks.exe) and wintun.dll live.
+// binDir returns the directory of the running executable, where wintun.dll —
+// the one runtime file the embedded sing-box core still needs — must live.
 func binDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -15,7 +15,5 @@ func binDir() string {
 	return filepath.Dir(exe)
 }
 
-// binPath resolves a bundled binary name against the executable directory.
-func binPath(name string) string {
-	return filepath.Join(binDir(), name)
-}
+// BinDir exposes that directory to the developer tools.
+func BinDir() string { return binDir() }

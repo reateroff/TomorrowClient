@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/energye/systray"
@@ -19,7 +20,6 @@ import (
 	"TomorrowClient/internal/store"
 	"TomorrowClient/internal/sub"
 	"TomorrowClient/internal/vpn"
-	"TomorrowClient/internal/xray"
 )
 
 // Version is the client version shown on the About screen.
@@ -28,10 +28,16 @@ const Version = "1.0.0"
 // App is the Wails-bound application object. Every exported method here is
 // callable from the React frontend.
 type App struct {
-	ctx     context.Context
-	store   *store.Store
-	engine  *vpn.Engine
-	mToggle *systray.MenuItem // tray "connect/disconnect" item, relabeled on status
+	ctx       context.Context
+	store     *store.Store
+	engine    *vpn.Engine
+	mToggle   *systray.MenuItem // tray "connect/disconnect" item, relabeled on status
+	startedAt time.Time         // process start, reported as uptime in the dev tools
+
+	// Developer-tools status simulation. simStop cancels the goroutine that
+	// animates fake traffic counters; nil when no simulation is running.
+	simMu   sync.Mutex
+	simStop chan struct{}
 }
 
 // AppInfo is the metadata shown on the "About" screen.
@@ -46,7 +52,7 @@ func (a *App) GetAppInfo() AppInfo {
 	return AppInfo{
 		Version:   Version,
 		Copyright: fmt.Sprintf("© %d TomorrowClient", time.Now().Year()),
-		BuiltWith: "Wails · Go · React · sing-box · xray-core",
+		BuiltWith: "Wails · Go · React · sing-box",
 	}
 }
 
@@ -58,6 +64,7 @@ func NewApp() *App {
 // startup is called by Wails when the app starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.startedAt = time.Now()
 
 	st, err := store.New()
 	if err != nil {
@@ -272,15 +279,7 @@ func (a *App) PreviewConfig() (string, error) {
 	if !ok {
 		return "", fmt.Errorf("профиль не найден")
 	}
-	var (
-		b   []byte
-		err error
-	)
-	if s.Core == model.CoreXray {
-		b, err = xray.Build(p, s)
-	} else {
-		b, err = singbox.Build(p, s)
-	}
+	b, err := singbox.Build(p, s)
 	if err != nil {
 		return "", err
 	}

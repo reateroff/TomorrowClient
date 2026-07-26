@@ -7,15 +7,14 @@ import {
   Gauge,
   ChevronRight,
 } from "lucide-react";
-import type { Status, Profile, AppSettings } from "../types";
-import { formatBytes, formatSpeed, formatUptime } from "../lib/format";
+import type { Status, Profile } from "../types";
+import { formatBytes, formatSpeed, formatUptime } from "../format";
 import { stripCountryPrefix } from "../flags";
 import { PingProfile } from "../../wailsjs/go/main/App";
 import FlagChip from "./FlagChip";
 
 interface Props {
   status: Status;
-  settings: AppSettings;
   activeProfile: Profile | null;
   onConnect: () => void;
   onDisconnect: () => void;
@@ -27,7 +26,6 @@ interface Props {
 // stats row is pinned to the bottom.
 export default function ConnectionView({
   status,
-  settings,
   activeProfile,
   onConnect,
   onDisconnect,
@@ -40,11 +38,15 @@ export default function ConnectionView({
   const isConnected = state === "connected";
   const isBusy = state === "connecting";
 
-  // Tick every second so the uptime clock stays live.
+  // Tick every second so the uptime clock stays live — only while connected,
+  // since that clock is the only thing reading it and an idle screen has no
+  // reason to re-render once a second.
   useEffect(() => {
+    if (!isConnected) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [isConnected]);
 
   // Active ping: only while connected, refreshed every 3s. Reset on drop or
   // when the active server changes.
@@ -89,7 +91,7 @@ export default function ConnectionView({
     : "bg-surface border border-border text-text-muted group-hover:border-text-faint group-hover:text-text";
 
   return (
-    <div className="animate-fade-up flex h-full flex-col p-6">
+    <div className="animate-view flex h-full flex-col p-6">
       {/* Active-server chip, top-left → opens Configs. Radius follows theme. */}
       <button
         onClick={onOpenConfigs}
@@ -102,9 +104,6 @@ export default function ConnectionView({
           {activeProfile
             ? stripCountryPrefix(activeProfile.name)
             : "Сервер не выбран"}
-        </span>
-        <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[9px] tracking-wide text-text-muted uppercase">
-          {settings.core}
         </span>
         <ChevronRight
           size={15}
@@ -145,34 +144,41 @@ export default function ConnectionView({
         </div>
       </div>
 
-      {/* Slim stats row, pinned to the bottom */}
-      <div className="mx-auto grid w-full max-w-sm grid-cols-4 gap-2">
-        <Stat
-          icon={<Gauge size={12} className="text-text-faint" />}
-          label="Пинг"
-          value={ping == null || ping < 0 ? "—" : `${ping} мс`}
-          valueCls={pingTone(ping)}
-        />
-        <Stat
-          icon={<Timer size={12} className="text-text-faint" />}
-          label="Время"
-          value={isConnected ? formatUptime(status.connectedAt, now) : "—"}
-        />
-        <Stat
-          icon={<ArrowDownToLine size={12} className="text-text-faint" />}
-          label="Скачано"
-          value={formatBytes(status.stats.download)}
-          valueCls="text-ok"
-          sub={formatSpeed(status.stats.downloadSpeed)}
-        />
-        <Stat
-          icon={<ArrowUpFromLine size={12} className="text-text-faint" />}
-          label="Отдано"
-          value={formatBytes(status.stats.upload)}
-          valueCls="text-accent"
-          sub={formatSpeed(status.stats.uploadSpeed)}
-        />
-      </div>
+      {/* Stats only exist once there is a tunnel. While disconnected the screen
+          is just the button, and the figures fade in on connect rather than
+          sitting there as a row of dashes and zeroes. */}
+      {isConnected && (
+        <div className="animate-view mx-auto grid w-full max-w-sm grid-cols-4 gap-2">
+          <Stat
+            icon={<Gauge size={12} className="text-text-faint" />}
+            label="Пинг"
+            value={ping == null || ping < 0 ? "—" : `${ping} мс`}
+            valueCls={pingTone(ping)}
+          />
+          <Stat
+            icon={<Timer size={12} className="text-text-faint" />}
+            label="Время"
+            value={formatUptime(status.connectedAt, now)}
+          />
+          <Stat
+            icon={<ArrowDownToLine size={12} className="text-text-faint" />}
+            label="Скачано"
+            value={formatBytes(status.stats.download)}
+            valueCls="text-ok"
+            sub={formatSpeed(status.stats.downloadSpeed)}
+          />
+          {/* Upload deliberately uses the fixed --color-up rather than the
+              accent: the accent is user-chosen, so it clashed with the green
+              download figure whenever someone picked an unrelated colour. */}
+          <Stat
+            icon={<ArrowUpFromLine size={12} className="text-text-faint" />}
+            label="Отдано"
+            value={formatBytes(status.stats.upload)}
+            valueCls="text-up"
+            sub={formatSpeed(status.stats.uploadSpeed)}
+          />
+        </div>
+      )}
     </div>
   );
 }

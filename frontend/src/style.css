@@ -70,6 +70,9 @@
   --color-ok: #5bd6a0;
   --color-amber: #e0b354;
   --color-danger: #ff6b6b;
+  /* Upload figure. Fixed rather than accent-derived so the download/upload
+     pair always reads as one set, whatever accent the user picks. */
+  --color-up: #5eb0ef;
 
   --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
@@ -122,19 +125,91 @@ body {
   --wails-draggable: no-drag;
 }
 
-/* Entrance animation for views/modals */
-@keyframes fade-up {
+/* Entrance animations for views and modals. The style is user-selectable in
+   Settings → Внешний вид: theme.ts writes --anim-name/--anim-duration onto the
+   root, and every animated element reads them through .animate-view, so one
+   class covers all the variants. */
+@keyframes anim-fade {
   from {
     opacity: 0;
-    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes anim-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
-.animate-fade-up {
-  animation: fade-up 0.25s ease both;
+@keyframes anim-slide {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes anim-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* The preset is selected by data-anim on <html> (written by theme.ts) rather
+   than by substituting the keyframe name into the animation shorthand through
+   var(): plain declarations per preset are far easier to verify and leave no
+   room for a variable to silently fail to resolve.
+
+   No prefers-reduced-motion override here on purpose — the user picks the
+   animation explicitly in Settings, and "Без анимаций" is the off switch. A
+   silent OS-level override would just look like the feature is broken. */
+.animate-view {
+  animation: anim-rise 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+:root[data-anim="slide"] .animate-view {
+  animation-name: anim-slide;
+  animation-duration: 0.28s;
+}
+:root[data-anim="fade"] .animate-view {
+  animation-name: anim-fade;
+  animation-duration: 0.2s;
+}
+:root[data-anim="scale"] .animate-view {
+  animation-name: anim-scale;
+  animation-duration: 0.22s;
+}
+:root[data-anim="none"] .animate-view {
+  animation: none;
+}
+
+/* Dropdown menus. Fixed and short on purpose: a menu should feel instant, and
+   it must not inherit the (possibly large) view animation the user picked. */
+@keyframes anim-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-pop {
+  animation: anim-pop 0.12s ease-out both;
+  transform-origin: top right;
 }
 
 /* Slow pulse used by the connection orb */

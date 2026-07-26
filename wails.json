@@ -6,6 +6,7 @@
   "frontend:build": "bun run build",
   "frontend:dev:watcher": "bun run dev",
   "frontend:dev:serverUrl": "auto",
+  "build:tags": "with_gvisor,with_quic,with_utls,with_clash_api",
   "author": {
     "name": "reater",
     "email": "matveyantonov222@gmail.com"
@@ -15,6 +16,6 @@
     "productVersion": "1.0.0",
     "companyName": "reater",
     "copyright": "Copyright © 2026 reater",
-    "comments": "Minimal WinTun VPN client (xray / sing-box)"
+    "comments": "Minimal WinTun VPN client (embedded sing-box)"
   }
 }

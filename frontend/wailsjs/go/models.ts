@@ -16,6 +16,20 @@ export namespace main {
 	        this.builtWith = source["builtWith"];
 	    }
 	}
+	export class ProcessInfo {
+	    name: string;
+	    icon: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProcessInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.icon = source["icon"];
+	    }
+	}
 
 }
 
@@ -25,6 +39,7 @@ export namespace model {
 	    type: string;
 	    value: string;
 	    action: string;
+	    icon: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RoutingRule(source);
@@ -35,13 +50,14 @@ export namespace model {
 	        this.type = source["type"];
 	        this.value = source["value"];
 	        this.action = source["action"];
+	        this.icon = source["icon"];
 	    }
 	}
 	export class AppSettings {
 	    core: string;
 	    activeProfileId: string;
-	    routingMode: string;
 	    dns: string;
+	    dnsFallback: string;
 	    tunName: string;
 	    stack: string;
 	    mtu: number;
@@ -49,11 +65,14 @@ export namespace model {
 	    autoConnect: boolean;
 	    launchAtStartup: boolean;
 	    minimizeToTray: boolean;
+	    devMode: boolean;
 	    theme: string;
 	    accent: string;
+	    savedColors: string[];
 	    font: string;
 	    radius: string;
 	    navPosition: string;
+	    animation: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
@@ -63,8 +82,8 @@ export namespace model {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.core = source["core"];
 	        this.activeProfileId = source["activeProfileId"];
-	        this.routingMode = source["routingMode"];
 	        this.dns = source["dns"];
+	        this.dnsFallback = source["dnsFallback"];
 	        this.tunName = source["tunName"];
 	        this.stack = source["stack"];
 	        this.mtu = source["mtu"];
@@ -72,11 +91,14 @@ export namespace model {
 	        this.autoConnect = source["autoConnect"];
 	        this.launchAtStartup = source["launchAtStartup"];
 	        this.minimizeToTray = source["minimizeToTray"];
+	        this.devMode = source["devMode"];
 	        this.theme = source["theme"];
 	        this.accent = source["accent"];
+	        this.savedColors = source["savedColors"];
 	        this.font = source["font"];
 	        this.radius = source["radius"];
 	        this.navPosition = source["navPosition"];
+	        this.animation = source["animation"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

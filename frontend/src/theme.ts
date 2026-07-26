@@ -166,6 +166,55 @@ export const RADII: RadiusChoice[] = [
   { id: "round", name: "Круглые", value: "22px" },
 ];
 
+export interface AnimationChoice {
+  id: string;
+  name: string;
+  desc: string;
+  /** CSS @keyframes name from style.css, or "none" to disable. */
+  keyframes: string;
+  duration: string;
+}
+
+// Entrance animation presets for views and modals. "rise" is the original
+// behaviour and stays the default.
+export const ANIMATIONS: AnimationChoice[] = [
+  {
+    id: "rise",
+    name: "Подъём",
+    desc: "Всплывает снизу",
+    keyframes: "anim-rise",
+    duration: "0.25s",
+  },
+  {
+    id: "slide",
+    name: "Слайд",
+    desc: "Выезжает справа",
+    keyframes: "anim-slide",
+    duration: "0.28s",
+  },
+  {
+    id: "fade",
+    name: "Затухание",
+    desc: "Только прозрачность",
+    keyframes: "anim-fade",
+    duration: "0.2s",
+  },
+  {
+    id: "scale",
+    name: "Приближение",
+    desc: "Мягкий зум",
+    keyframes: "anim-scale",
+    duration: "0.22s",
+  },
+  {
+    id: "none",
+    name: "Без анимаций",
+    desc: "Мгновенно",
+    keyframes: "none",
+    duration: "0s",
+  },
+];
+
 function byId<T extends { id: string }>(list: T[], id: string, fallback: T): T {
   return list.find((x) => x.id === id) ?? fallback;
 }
@@ -173,6 +222,60 @@ function byId<T extends { id: string }>(list: T[], id: string, fallback: T): T {
 // isHex reports whether a string is a #rgb / #rrggbb colour.
 export function isHex(v: string): boolean {
   return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim());
+}
+
+export interface HSV {
+  h: number; // 0..360
+  s: number; // 0..1
+  v: number; // 0..1
+}
+
+// The colour picker keeps HSV as its source of truth: hue survives a trip to
+// pure black or pure white, which it would not if hex were authoritative.
+
+function toHex2(n: number): string {
+  return Math.round(n).toString(16).padStart(2, "0");
+}
+
+// hsvToHex converts HSV to a #rrggbb string.
+export function hsvToHex(h: number, s: number, v: number): string {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  const seg = Math.floor(((h % 360) + 360) % 360 / 60);
+  const [r, g, b] = [
+    [c, x, 0],
+    [x, c, 0],
+    [0, c, x],
+    [0, x, c],
+    [x, 0, c],
+    [c, 0, x],
+  ][seg];
+  return `#${toHex2((r + m) * 255)}${toHex2((g + m) * 255)}${toHex2((b + m) * 255)}`;
+}
+
+// hexToHsv parses a #rgb / #rrggbb string, or returns null when it is not one.
+export function hexToHsv(hex: string): HSV | null {
+  if (!isHex(hex)) return null;
+  let h = hex.trim().replace("#", "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+
+  let hue = 0;
+  if (d !== 0) {
+    if (max === r) hue = ((g - b) / d) % 6;
+    else if (max === g) hue = (b - r) / d + 2;
+    else hue = (r - g) / d + 4;
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+  return { h: hue, s: max === 0 ? 0 : d / max, v: max };
 }
 
 // lighten mixes a hex colour toward white by amount (0..1) to derive the "soft"
@@ -196,6 +299,7 @@ export function applyTheme(opts: {
   accent: string;
   font: string;
   radius: string;
+  animation?: string;
 }): void {
   const root = document.documentElement.style;
 
@@ -225,4 +329,8 @@ export function applyTheme(opts: {
 
   const radius = byId(RADII, opts.radius, RADII[1]);
   root.setProperty("--radius-lg", radius.value);
+
+  // Animations are selected by attribute; style.css holds one rule per preset.
+  const anim = byId(ANIMATIONS, opts.animation ?? "", ANIMATIONS[0]);
+  document.documentElement.setAttribute("data-anim", anim.id);
 }

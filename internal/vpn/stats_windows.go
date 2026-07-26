@@ -6,11 +6,18 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"TomorrowClient/internal/model"
 )
 
 // This file reads the byte counters of the WinTun adapter directly from the
-// Windows IP Helper API (GetIfTable2). Both cores create an adapter named
-// TomorrowTun, so a single implementation covers xray and sing-box.
+// Windows IP Helper API (GetIfTable2), matching it by the adapter name
+// sing-box was told to create.
+
+// activeTunName is the WinTun adapter name in use for the current connection.
+// It defaults to the built-in name and is overwritten by the engine on Connect,
+// keeping the sing-box config and this stats matcher in agreement.
+var activeTunName = model.DefaultTunName
 
 var (
 	modIphlpapi         = windows.NewLazySystemDLL("iphlpapi.dll")

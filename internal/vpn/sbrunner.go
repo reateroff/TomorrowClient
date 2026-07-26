@@ -3,68 +3,106 @@
 package vpn
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
+
+	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/include"
+	sblog "github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
+	sbjson "github.com/sagernet/sing/common/json"
 
 	"TomorrowClient/internal/model"
 	"TomorrowClient/internal/singbox"
 )
 
-// sbRunner runs sing-box.exe as a subprocess.
+// sbRunner runs sing-box inside this process. The core is linked into the
+// binary rather than shipped as sing-box.exe, so there is no subprocess to
+// spawn, no temp config file on disk, and no orphan left behind if the app
+// dies. wintun.dll is still required next to the executable: sing-box loads it
+// at runtime to create the TUN adapter.
 type sbRunner struct {
-	cmd        *exec.Cmd
-	configPath string
-	logs       *LogSink
+	instance *box.Box
+	cancel   context.CancelFunc
+	logs     *LogSink
 }
 
-// start writes the config and launches sing-box run -c <config>.
+// start builds the config, instantiates sing-box and brings the tunnel up.
 func (r *sbRunner) start(p model.Profile, s model.AppSettings) error {
 	cfg, err := singbox.Build(p, s)
 	if err != nil {
 		return fmt.Errorf("build sing-box config: %w", err)
 	}
-	r.configPath = filepath.Join(os.TempDir(), "tomorrow-singbox.json")
-	if err := os.WriteFile(r.configPath, cfg, 0o644); err != nil {
-		return fmt.Errorf("write sing-box config: %w", err)
+
+	instance, cancel, err := newInstance(cfg, logBridge{sink: r.logs})
+	if err != nil {
+		return err
 	}
 
-	bin := binPath("sing-box.exe")
-	if _, err := os.Stat(bin); err != nil {
-		return fmt.Errorf("sing-box.exe not found next to the app: %w", err)
-	}
-	r.cmd = exec.Command(bin, "run", "-c", r.configPath)
-	r.cmd.Dir = binDir()
-	hidden(r.cmd)
-	r.pipeLogs()
-	if err := r.cmd.Start(); err != nil {
+	if err := instance.Start(); err != nil {
+		_ = instance.Close()
+		cancel()
 		return fmt.Errorf("start sing-box: %w", err)
 	}
+
+	r.instance, r.cancel = instance, cancel
 	return nil
 }
 
-// pipeLogs attaches stdout/stderr to the log sink when one is present.
-func (r *sbRunner) pipeLogs() {
-	if r.logs == nil {
-		return
+// newInstance parses a sing-box config and builds the core from it, without
+// starting it — nothing touches the network adapter yet. Split out from start
+// so the config generator can be verified against the real parser in a test.
+func newInstance(cfg []byte, logs sblog.PlatformWriter) (*box.Box, context.CancelFunc, error) {
+	// sing-box resolves inbound/outbound/DNS/service types through registries
+	// carried on the context, so the context has to exist before the config can
+	// even be parsed.
+	ctx := box.Context(context.Background(),
+		include.InboundRegistry(),
+		include.OutboundRegistry(),
+		include.EndpointRegistry(),
+		include.DNSTransportRegistry(),
+		include.ServiceRegistry(),
+	)
+
+	options, err := sbjson.UnmarshalExtendedContext[option.Options](ctx, cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse sing-box config: %w", err)
 	}
-	if out, err := r.cmd.StdoutPipe(); err == nil {
-		go r.logs.pump(out, "")
+
+	ctx, cancel := context.WithCancel(ctx)
+	instance, err := box.New(box.Options{
+		Context: ctx,
+		Options: options,
+		// The platform log writer is how the core's own logs reach the UI now
+		// that there is no stdout pipe to read.
+		PlatformLogWriter: logs,
+	})
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("create sing-box: %w", err)
 	}
-	if errp, err := r.cmd.StderrPipe(); err == nil {
-		go r.logs.pump(errp, "")
+	return instance, cancel, nil
+}
+
+// stop shuts the core down and releases the TUN adapter.
+func (r *sbRunner) stop() {
+	if r.instance != nil {
+		_ = r.instance.Close()
+		r.instance = nil
+	}
+	if r.cancel != nil {
+		r.cancel()
+		r.cancel = nil
 	}
 }
 
-// stop terminates sing-box and removes the temp config.
-func (r *sbRunner) stop() {
-	if r.cmd != nil && r.cmd.Process != nil {
-		_ = r.cmd.Process.Kill()
-		_, _ = r.cmd.Process.Wait()
+// logBridge adapts the sing-box platform log writer to the app's log sink.
+type logBridge struct{ sink *LogSink }
+
+// WriteMessage is called by sing-box for every log line it produces.
+func (b logBridge) WriteMessage(level sblog.Level, message string) {
+	if b.sink == nil {
+		return
 	}
-	if r.configPath != "" {
-		_ = os.Remove(r.configPath)
-	}
-	r.cmd = nil
+	b.sink.append(sblog.FormatLevel(level) + " " + message)
 }

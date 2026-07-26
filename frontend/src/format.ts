@@ -1,5 +1,7 @@
-// Formatting helpers for subscription traffic and expiry, with an unlimited (∞)
-// fallback used when the provider reports nothing.
+// The one formatting module. There used to be a second one at lib/format.ts
+// exporting a rival formatBytes with English units, so the main screen said
+// "0 B" while the profiles list said "0 Б" — same app, same value, two
+// spellings. Everything lives here now.
 
 export const INFINITY = "∞";
 
@@ -39,6 +41,43 @@ export function formatExpiry(expire: number): string {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+// formatSpeed renders a byte/second rate (e.g. "2,3 МБ/с").
+export function formatSpeed(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/с`;
+}
+
+// formatUptime renders the time since a unix-ms start, growing a field at a
+// time: "07" for the first minute, then "1:07", then "1:01:07". A fixed
+// HH:MM:SS would spend the first minute showing two zeroed-out fields.
+export function formatUptime(connectedAt: number, now: number): string {
+  const secs = connectedAt
+    ? Math.max(0, Math.floor((now - connectedAt) / 1000))
+    : 0;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+
+  const s = secs % 60;
+  const m = Math.floor(secs / 60) % 60;
+  const h = Math.floor(secs / 3600);
+
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  if (m > 0) return `${m}:${pad(s)}`;
+  return pad(s);
+}
+
+// plural picks the Russian form for n: 1 сервер / 2 сервера / 5 серверов.
+export function plural(
+  n: number,
+  one: string,
+  few: string,
+  many: string
+): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
 }
 
 // subDomain extracts the host from a subscription URL for display.

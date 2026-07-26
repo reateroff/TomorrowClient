@@ -1,6 +1,7 @@
 // Package singbox builds a sing-box configuration JSON from a model.Profile.
-// sing-box runs as an external subprocess with a native TUN inbound and
-// auto_route, so it manages the system routing table itself.
+// sing-box is linked into the app and runs in-process; the config it gets here
+// is the same JSON the standalone binary would take. The TUN inbound uses
+// auto_route, so sing-box manages the system routing table itself.
 package singbox
 
 import (
@@ -16,6 +17,8 @@ const ClashAPIAddr = "127.0.0.1:19090"
 // Build renders a full sing-box config for the given profile and settings.
 func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 	// TUN inbound honours the user-chosen adapter name, network stack and MTU.
+	// No "sniff" field here: it is a legacy inbound option that sing-box 1.13
+	// rejects outright. Sniffing is requested by the route rule instead.
 	tun := map[string]any{
 		"type":           "tun",
 		"tag":            "tun-in",
@@ -24,7 +27,6 @@ func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 		"auto_route":     true,
 		"strict_route":   true,
 		"stack":          firstNonEmpty(s.Stack, "gvisor"),
-		"sniff":          true,
 	}
 	if s.MTU > 0 {
 		tun["mtu"] = s.MTU
@@ -40,10 +42,14 @@ func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 				"external_controller": ClashAPIAddr,
 			},
 		},
+		// Two resolvers: the primary answers through the tunnel and is the
+		// default, the fallback answers the names that bypass it (LAN, direct
+		// rules). sing-box does not fail over between servers on its own, so
+		// these are two roles rather than a retry chain.
 		"dns": map[string]any{
 			"servers": []any{
 				map[string]any{"tag": "remote", "address": firstNonEmpty(s.DNS, "1.1.1.1"), "detour": "proxy"},
-				map[string]any{"tag": "local", "address": "223.5.5.5", "detour": "direct"},
+				map[string]any{"tag": "local", "address": firstNonEmpty(s.DNSFallback, "8.8.8.8"), "detour": "direct"},
 			},
 			"final":    "remote",
 			"strategy": "ipv4_only",
@@ -51,10 +57,11 @@ func Build(p model.Profile, s model.AppSettings) ([]byte, error) {
 		"inbounds": []any{
 			tun,
 		},
+		// No "block" outbound: blocking is expressed as the "reject" rule action
+		// (see userRule), and the legacy block outbound type is on its way out.
 		"outbounds": []any{
 			outbound(p),
 			map[string]any{"type": "direct", "tag": "direct"},
-			map[string]any{"type": "block", "tag": "block"},
 		},
 		"route": route(s),
 	}

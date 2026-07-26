@@ -19,7 +19,7 @@ import (
 )
 
 // userAgent mimics a common client so providers that gate on it still respond.
-const userAgent = "TomorrowClient/1.0 (sing-box; xray)"
+const userAgent = "TomorrowClient/1.0 (sing-box)"
 
 // fetchTimeout bounds the whole request.
 const fetchTimeout = 20 * time.Second

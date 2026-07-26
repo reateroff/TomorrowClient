@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import type { AppSettings, RoutingRule } from "../types";
 import { ListProcesses } from "../../wailsjs/go/main/App";
+import type { main } from "../../wailsjs/go/models";
+
+type ProcessInfo = main.ProcessInfo;
 
 interface Props {
   settings: AppSettings;
@@ -83,13 +86,13 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
 
   const commitRules = (next: RoutingRule[]) => onChange({ ...settings, rules: next });
 
-  const addRule = (t: RuleType, v: string, a: RuleAction) => {
+  const addRule = (t: RuleType, v: string, a: RuleAction, icon?: string) => {
     const val = v.trim();
     if (!val) return;
     // Avoid exact duplicates within the same type.
     if (rules.some((r) => r.type === t && r.value.toLowerCase() === val.toLowerCase()))
       return;
-    commitRules([...rules, { type: t, value: val, action: a }]);
+    commitRules([...rules, { type: t, value: val, action: a, icon }]);
   };
 
   const add = () => {
@@ -110,7 +113,7 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
   const shown = rules.filter((r) => r.type === type);
 
   return (
-    <div className="animate-fade-up flex h-full flex-col p-6">
+    <div className="animate-view flex h-full flex-col p-6">
       <div className="mb-5 flex items-center gap-2.5">
         <Split size={20} className="text-accent" />
         <div>
@@ -222,8 +225,8 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
       {picking && (
         <ProcessPicker
           onClose={() => setPicking(false)}
-          onPick={(name) => {
-            addRule("process", name, action);
+          onPick={(name, icon) => {
+            addRule("process", name, action, icon);
           }}
         />
       )}
@@ -242,8 +245,17 @@ function RuleRow({
   const a = ACTIONS.find((x) => x.key === rule.action);
   return (
     <div className="group flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-text-muted">
-        {t?.icon}
+      <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-2 text-text-muted">
+        {rule.type === "process" && rule.icon ? (
+          <img
+            src={rule.icon}
+            alt=""
+            className="h-5 w-5 object-contain"
+            draggable={false}
+          />
+        ) : (
+          t?.icon
+        )}
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate font-mono text-sm text-text">{rule.value}</div>
@@ -268,26 +280,26 @@ function RuleRow({
   );
 }
 
-// ProcessPicker lists running processes with a live filter. Clicking a process
-// adds it as a rule immediately and closes the picker.
+// ProcessPicker lists running processes with a live filter and their real app
+// icons. Clicking a process adds it as a rule immediately and closes the picker.
 function ProcessPicker({
   onClose,
   onPick,
 }: {
   onClose: () => void;
-  onPick: (name: string) => void;
+  onPick: (name: string, icon?: string) => void;
 }) {
-  const [all, setAll] = useState<string[] | null>(null);
+  const [all, setAll] = useState<ProcessInfo[] | null>(null);
   const [q, setQ] = useState("");
 
   useEffect(() => {
-    ListProcesses().then((p) => setAll((p as string[]) ?? []));
+    ListProcesses().then((p) => setAll((p as ProcessInfo[]) ?? []));
   }, []);
 
   const filtered = useMemo(() => {
     if (!all) return [];
     const s = q.trim().toLowerCase();
-    return s ? all.filter((n) => n.toLowerCase().includes(s)) : all;
+    return s ? all.filter((p) => p.name.toLowerCase().includes(s)) : all;
   }, [all, q]);
 
   return (
@@ -296,7 +308,7 @@ function ProcessPicker({
       onClick={onClose}
     >
       <div
-        className="animate-fade-up flex max-h-[70vh] w-full max-w-md flex-col rounded-xl border border-border bg-surface p-4 shadow-2xl"
+        className="animate-view flex max-h-[70vh] w-full max-w-md flex-col rounded-xl border border-border bg-surface p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -333,14 +345,23 @@ function ProcessPicker({
               Ничего не найдено.
             </div>
           ) : (
-            filtered.map((name) => (
+            filtered.map((p) => (
               <button
-                key={name}
-                onClick={() => onPick(name)}
+                key={p.name}
+                onClick={() => onPick(p.name, p.icon || undefined)}
                 className="no-drag flex items-center gap-2.5 rounded-lg px-3 py-2 text-left font-mono text-sm text-text-muted transition hover:bg-surface-2 hover:text-text"
               >
-                <AppWindow size={15} className="shrink-0 text-text-faint" />
-                <span className="truncate">{name}</span>
+                {p.icon ? (
+                  <img
+                    src={p.icon}
+                    alt=""
+                    className="h-[18px] w-[18px] shrink-0 object-contain"
+                    draggable={false}
+                  />
+                ) : (
+                  <AppWindow size={15} className="shrink-0 text-text-faint" />
+                )}
+                <span className="truncate">{p.name}</span>
                 <Plus size={14} className="ml-auto shrink-0 text-text-faint" />
               </button>
             ))

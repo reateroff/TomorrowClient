@@ -6,10 +6,7 @@ import {
   ScrollText,
   Bug,
   Info,
-  Cpu,
   Route,
-  Globe2,
-  Rocket,
   Zap,
   Check,
   Copy,
@@ -22,15 +19,53 @@ import {
   PanelLeft,
   PanelTop,
   X,
+  RefreshCw,
+  RotateCcw,
+  Download,
+  Terminal,
+  AlertTriangle,
+  PlayCircle,
+  Server,
+  Trash,
+  Square,
+  Sparkles,
+  BugOff,
+  Pipette,
+  ChevronDown,
+  Plus,
 } from "lucide-react";
-import type { AppInfo, AppSettings, Core } from "../types";
-import { THEME_PRESETS, ACCENTS, FONTS, RADII, isHex } from "../theme";
+import type { AppInfo, AppSettings } from "../types";
+import {
+  THEME_PRESETS,
+  ACCENTS,
+  FONTS,
+  RADII,
+  ANIMATIONS,
+  isHex,
+  hexToHsv,
+  hsvToHex,
+} from "../theme";
+import type { HSV } from "../theme";
 import {
   GetLogs,
   ClearLogs,
   PreviewConfig,
+  GetSettingsJSON,
+  RunNetDiag,
+  ResetSettings,
+  ExportDiagnostics,
+  GetSettings,
+  GetActiveProfileJSON,
+  ResetAllData,
+  SimulateStatus,
+  StopSimulation,
 } from "../../wailsjs/go/main/App";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
+import { plural } from "../format";
+import { push } from "./Toasts";
+
+// How many taps on the client name unlock the developer section.
+const TAPS_TO_UNLOCK = 10;
 
 type TabKey =
   | "appearance"
@@ -107,18 +142,25 @@ export default function SettingsView({
   const set = (patch: Partial<AppSettings>) =>
     onChange({ ...settings, ...patch });
 
-  const active = MENU.find((m) => m.key === tab);
+  // Dev-only sections stay out of the menu until unlocked. Deriving the active
+  // page from the visible list means switching dev mode off while standing on
+  // the developer page drops back to the menu instead of stranding the user.
+  const menu = MENU.filter((m) => !m.dev || settings.devMode);
+  const active = menu.find((m) => m.key === tab);
 
   // --- Menu (root) ---
   if (!tab || !active) {
     return (
-      <div className="animate-fade-up flex h-full flex-col overflow-y-auto p-6">
+      <div
+        key="menu"
+        className="animate-view flex h-full flex-col overflow-y-auto p-6"
+      >
         <div className="mb-5 flex items-center gap-2.5">
           <Settings2 size={20} className="text-accent" />
           <h1 className="text-lg font-semibold text-text">Настройки</h1>
         </div>
         <div className="flex flex-col gap-2.5">
-          {MENU.map((m) => (
+          {menu.map((m) => (
             <button
               key={m.key}
               onClick={() => setTab(m.key)}
@@ -152,8 +194,11 @@ export default function SettingsView({
   }
 
   // --- Section page ---
+  // Both roots carry a key: a CSS entrance animation only replays on a fresh
+  // mount, and without distinct keys React reuses the same node when moving
+  // between the menu and a section, or between two sections.
   return (
-    <div className="animate-fade-up flex h-full min-h-0 flex-col p-6">
+    <div key={tab} className="animate-view flex h-full min-h-0 flex-col p-6">
       <div className="mb-6 flex items-center gap-3">
         <button
           onClick={() => setTab(null)}
@@ -170,9 +215,13 @@ export default function SettingsView({
         )}
       </div>
 
+      {/* -mr-6 cancels this page's right padding so the scrollbar sits flush
+          against the window edge like every other view; pr-1.5 keeps the
+          content itself off the bar. The logs tab scrolls inside its own
+          bordered panel, so it must not be pulled out. */}
       <div
         className={`min-h-0 flex-1 ${
-          tab === "logs" ? "flex flex-col" : "overflow-y-auto"
+          tab === "logs" ? "flex flex-col" : "-mr-6 overflow-y-auto pr-1.5"
         }`}
       >
         {tab === "appearance" && <Appearance settings={settings} set={set} />}
@@ -181,8 +230,16 @@ export default function SettingsView({
           <Connection settings={settings} set={set} disabled={disabled} />
         )}
         {tab === "logs" && <Logs />}
-        {tab === "developer" && <Developer settings={settings} />}
-        {tab === "about" && <About appInfo={appInfo} />}
+        {tab === "developer" && (
+          <Developer settings={settings} set={set} onApply={onChange} />
+        )}
+        {tab === "about" && (
+          <About
+            appInfo={appInfo}
+            devMode={settings.devMode}
+            onUnlock={() => set({ devMode: true })}
+          />
+        )}
       </div>
     </div>
   );
@@ -250,7 +307,9 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
         </div>
         <CustomAccent
           value={settings.accent}
+          saved={settings.savedColors ?? []}
           onApply={(hex) => set({ accent: hex })}
+          onSavedChange={(next) => set({ savedColors: next })}
         />
       </Section>
 
@@ -305,6 +364,13 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
         </div>
       </Section>
 
+      <Section icon={<Sparkles size={16} />} title="Анимации">
+        <AnimationPicker
+          value={settings.animation || "rise"}
+          onChange={(id) => set({ animation: id })}
+        />
+      </Section>
+
       <Section icon={<PanelLeft size={16} />} title="Расположение вкладок">
         <div className="grid grid-cols-2 gap-3">
           <NavPosCard
@@ -321,6 +387,77 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
           />
         </div>
       </Section>
+    </div>
+  );
+}
+
+// AnimationPicker lists the entrance presets and replays a preview tile on every
+// pick, so the choice can be judged without navigating away.
+function AnimationPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  // Bumping the key remounts the preview, which restarts its CSS animation —
+  // re-adding a class would not retrigger it.
+  const [replay, setReplay] = useState(0);
+  const active = ANIMATIONS.find((a) => a.id === value) ?? ANIMATIONS[0];
+
+  const pick = (id: string) => {
+    onChange(id);
+    setReplay((n) => n + 1);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-3 gap-2">
+        {ANIMATIONS.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => pick(a.id)}
+            className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left transition ${
+              value === a.id
+                ? "border-accent/60 bg-surface-2 text-text"
+                : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+            }`}
+          >
+            <span className="text-sm">{a.name}</span>
+            <span className="text-[11px] text-text-faint">{a.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 overflow-hidden rounded-lg border border-border bg-bg px-4 py-3">
+        <div
+          key={replay}
+          // The preview runs the picked preset directly, independent of the
+          // root variables, so it previews even before the setting is saved.
+          style={{
+            animation:
+              active.keyframes === "none"
+                ? undefined
+                : `${active.keyframes} ${active.duration} cubic-bezier(0.22,1,0.36,1) both`,
+          }}
+          className="flex items-center gap-2.5"
+        >
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/15 text-accent">
+            <Sparkles size={15} />
+          </span>
+          <div>
+            <div className="text-sm text-text">Так открываются экраны</div>
+            <div className="text-[11px] text-text-faint">{active.name}</div>
+          </div>
+        </div>
+        <button
+          onClick={() => setReplay((n) => n + 1)}
+          title="Повторить"
+          className="ml-auto shrink-0 rounded-md p-1.5 text-text-faint transition hover:bg-surface-2 hover:text-text"
+        >
+          <RefreshCw size={14} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -351,14 +488,20 @@ function NavPosCard({
   );
 }
 
-// CustomAccent opens a polished modal to pick a custom hex accent: a large live
-// preview, a native colour wheel, a hex field and a strip of quick shades.
+// MAX_SAVED_COLORS caps the user's palette so the strip stays one tidy row.
+const MAX_SAVED_COLORS = 16;
+
+// CustomAccent opens the picker and owns the user's saved-colour list.
 function CustomAccent({
   value,
+  saved,
   onApply,
+  onSavedChange,
 }: {
   value: string;
+  saved: string[];
   onApply: (hex: string) => void;
+  onSavedChange: (next: string[]) => void;
 }) {
   const custom = isHex(value);
   const [open, setOpen] = useState(false);
@@ -382,47 +525,120 @@ function CustomAccent({
       {open && (
         <ColorPickerModal
           initial={custom ? value : "#7c8cff"}
+          saved={saved}
           onClose={() => setOpen(false)}
           onApply={(hex) => {
             onApply(hex);
             setOpen(false);
           }}
+          onSave={(hex) => {
+            const h = hex.toLowerCase();
+            // Re-saving an existing colour is a no-op rather than a duplicate.
+            if (saved.includes(h)) return;
+            onSavedChange([...saved, h].slice(-MAX_SAVED_COLORS));
+          }}
+          onRemove={(hex) =>
+            onSavedChange(saved.filter((c) => c !== hex.toLowerCase()))
+          }
         />
       )}
     </>
   );
 }
 
-const QUICK_SHADES = [
-  "#7c8cff", "#4f8cff", "#38bdf8", "#4fd1c5", "#5bd6a0", "#a3e635",
-  "#e0b155", "#fb923c", "#f26d6d", "#f08a9c", "#e879f9", "#b18cff",
-  "#64748b", "#5a5f6b", "#3a7a55", "#8f4550",
-];
+// clamp01 keeps a normalised drag position inside the control.
+const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
+// ColorPickerModal is a self-contained picker drawn in the app's own language:
+// a saturation/value field, a hue rail, a hex field and quick shades. It
+// deliberately avoids <input type="color">, whose popup is the browser's own
+// widget and looks nothing like the rest of the client.
 function ColorPickerModal({
   initial,
+  saved,
   onClose,
   onApply,
+  onSave,
+  onRemove,
 }: {
   initial: string;
+  saved: string[];
   onClose: () => void;
   onApply: (hex: string) => void;
+  onSave: (hex: string) => void;
+  onRemove: (hex: string) => void;
 }) {
-  const [hex, setHex] = useState(initial);
-  const valid = isHex(hex);
-  const preview = valid ? hex : "#2a2a2f";
+  // HSV is authoritative while picking; hex is derived. Going through hex on
+  // every drag would lose the hue as soon as the value reached black or white.
+  const [hsv, setHsv] = useState(
+    () => hexToHsv(initial) ?? { h: 230, s: 0.45, v: 1 }
+  );
+  const [text, setText] = useState(initial.toLowerCase());
+
+  const hex = hsvToHex(hsv.h, hsv.s, hsv.v);
+  const typedValid = isHex(text);
+  const alreadySaved = saved.includes(hex.toLowerCase());
+
+  const svRef = useRef<HTMLDivElement>(null);
+  const hueRef = useRef<HTMLDivElement>(null);
+
+  // Committing through here keeps the hex field in step with the handles.
+  const commit = (next: HSV) => {
+    setHsv(next);
+    setText(hsvToHex(next.h, next.s, next.v));
+  };
+
+  const pickFromHex = (v: string) => {
+    setText(v);
+    const parsed = hexToHsv(v);
+    if (parsed) setHsv(parsed);
+  };
+
+  // Pointer capture means a drag that leaves the control still tracks.
+  const drag =
+    (
+      ref: React.RefObject<HTMLDivElement | null>,
+      apply: (x: number, y: number) => void
+    ) =>
+    (e: React.PointerEvent) => {
+      if (e.type === "pointermove" && e.buttons !== 1) return;
+      const el = ref.current;
+      if (!el) return;
+      if (e.type === "pointerdown") {
+        el.setPointerCapture(e.pointerId);
+      }
+      const r = el.getBoundingClientRect();
+      apply(
+        clamp01((e.clientX - r.left) / r.width),
+        clamp01((e.clientY - r.top) / r.height)
+      );
+    };
+
+  const onSV = drag(svRef, (x, y) => commit({ ...hsv, s: x, v: 1 - y }));
+  const onHue = drag(hueRef, (x) => commit({ ...hsv, h: x * 360 }));
+
+  // Chromium ships an eyedropper; offer it only where it actually exists.
+  const eyeDropper = (window as any).EyeDropper;
+  const pickFromScreen = async () => {
+    try {
+      const res = await new eyeDropper().open();
+      if (res?.sRGBHex) pickFromHex(res.sRGBHex);
+    } catch {
+      /* the user dismissed the eyedropper */
+    }
+  };
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-6 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="animate-fade-up w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl"
+        className="animate-view w-full max-w-xs rounded-xl border border-border bg-surface p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-text">Свой цвет акцента</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-text">Цвет акцента</h2>
           <button
             onClick={onClose}
             className="no-drag text-text-faint transition hover:text-text"
@@ -431,75 +647,132 @@ function ColorPickerModal({
           </button>
         </div>
 
-        {/* Live preview */}
+        {/* Saturation (x) × value (y) over the current hue */}
         <div
-          className="mb-4 flex h-20 items-center justify-center rounded-lg border border-border"
-          style={{ background: preview }}
+          ref={svRef}
+          onPointerDown={onSV}
+          onPointerMove={onSV}
+          className="relative mb-3 h-40 w-full cursor-crosshair touch-none overflow-hidden rounded-lg border border-border"
+          style={{
+            background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))`,
+          }}
         >
           <span
-            className="rounded-md px-3 py-1 font-mono text-sm"
+            className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
             style={{
-              background: "rgba(0,0,0,0.35)",
-              color: "#fff",
+              left: `${hsv.s * 100}%`,
+              top: `${(1 - hsv.v) * 100}%`,
+              background: hex,
             }}
-          >
-            {valid ? hex.toUpperCase() : "—"}
-          </span>
-        </div>
-
-        {/* Wheel + hex field */}
-        <div className="mb-4 flex items-center gap-3">
-          <label
-            className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-lg border border-border"
-            style={{ background: preview }}
-            title="Палитра"
-          >
-            <input
-              type="color"
-              value={valid ? hex : "#7c8cff"}
-              onChange={(e) => setHex(e.target.value)}
-              className="h-0 w-0 opacity-0"
-            />
-            <Palette size={16} className="text-white/80 mix-blend-difference" />
-          </label>
-          <input
-            value={hex}
-            onChange={(e) => setHex(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && valid && onApply(hex)}
-            placeholder="#ffffff"
-            spellCheck={false}
-            className={`min-w-0 flex-1 rounded-lg border bg-bg px-3 py-2.5 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 ${
-              hex.length > 1 && !valid ? "border-danger/50" : "border-border"
-            }`}
           />
         </div>
 
-        {/* Quick shades */}
-        <div className="mb-5 grid grid-cols-8 gap-2">
-          {QUICK_SHADES.map((c) => (
-            <button
-              key={c}
-              onClick={() => setHex(c)}
-              title={c}
-              className={`h-7 w-full rounded-md border transition ${
-                hex.toLowerCase() === c ? "border-text" : "border-transparent hover:border-border"
-              }`}
-              style={{ background: c }}
-            />
-          ))}
+        {/* Hue rail */}
+        <div
+          ref={hueRef}
+          onPointerDown={onHue}
+          onPointerMove={onHue}
+          className="relative mb-3 h-3 w-full cursor-pointer touch-none rounded-full border border-border"
+          style={{
+            background:
+              "linear-gradient(to right,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%)",
+          }}
+        >
+          <span
+            className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+            style={{
+              left: `${(hsv.h / 360) * 100}%`,
+              background: `hsl(${hsv.h} 100% 50%)`,
+            }}
+          />
         </div>
 
-        <div className="flex justify-end gap-2">
+        {/* Swatch + hex + eyedropper */}
+        <div className="mb-3 flex items-center gap-2">
+          <span
+            className="h-9 w-9 shrink-0 rounded-lg border border-border"
+            style={{ background: hex }}
+          />
+          <input
+            value={text}
+            onChange={(e) => pickFromHex(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && typedValid && onApply(hex)}
+            placeholder="#ffffff"
+            spellCheck={false}
+            className={`min-w-0 flex-1 rounded-lg border bg-bg px-3 py-2 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 ${
+              text.length > 1 && !typedValid ? "border-danger/50" : "border-border"
+            }`}
+          />
+          {eyeDropper && (
+            <button
+              onClick={pickFromScreen}
+              title="Взять цвет с экрана"
+              className="shrink-0 rounded-lg border border-border p-2 text-text-faint transition hover:bg-surface-2 hover:text-text"
+            >
+              <Pipette size={15} />
+            </button>
+          )}
+        </div>
+
+        {/* The user's own palette. The ready-made shades that used to sit here
+            were the accent palette again, one screen up. */}
+        <div className="mb-4">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="font-mono text-[11px] uppercase tracking-wide text-text-faint">
+              Сохранённые
+            </span>
+            <button
+              onClick={() => onSave(hex)}
+              disabled={alreadySaved}
+              title={alreadySaved ? "Уже сохранён" : "Сохранить текущий цвет"}
+              className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-text-muted transition hover:bg-surface-2 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {alreadySaved ? <Check size={11} /> : <Plus size={11} />}
+              {alreadySaved ? "Сохранён" : "Сохранить"}
+            </button>
+          </div>
+
+          {saved.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border px-3 py-2.5 text-center text-[11px] text-text-faint">
+              Пока пусто — подберите цвет и нажмите «Сохранить»
+            </div>
+          ) : (
+            <div className="grid grid-cols-8 gap-1.5">
+              {saved.map((c) => (
+                <div key={c} className="group relative">
+                  <button
+                    onClick={() => pickFromHex(c)}
+                    title={c}
+                    className={`h-6 w-full rounded-md border transition ${
+                      hex.toLowerCase() === c
+                        ? "border-text"
+                        : "border-transparent hover:border-border"
+                    }`}
+                    style={{ background: c }}
+                  />
+                  <button
+                    onClick={() => onRemove(c)}
+                    title="Убрать"
+                    className="absolute -right-1 -top-1 hidden h-3.5 w-3.5 place-items-center rounded-full border border-border bg-surface text-text-faint transition hover:text-danger group-hover:grid"
+                  >
+                    <X size={8} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg border border-border px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2"
+            className="flex-1 rounded-lg border border-border py-2 text-sm text-text-muted transition hover:bg-surface-2"
           >
             Отмена
           </button>
           <button
             onClick={() => onApply(hex)}
-            disabled={!valid}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
+            className="flex-1 rounded-lg bg-accent py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
           >
             Применить
           </button>
@@ -513,33 +786,38 @@ function ColorPickerModal({
 
 function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-7">
-      <Section icon={<Rocket size={16} />} title="Запуск">
-        <div className="flex flex-col gap-3">
-          <Switch
-            label="Запускать вместе с Windows"
-            desc="Задача в планировщике с правами администратора"
+    <div className="flex max-w-xl flex-col gap-4">
+      {/* Same single-card layout as the Connection screen so the two settings
+          pages read as one system. */}
+      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <Row
+          label="Запускать с Windows"
+          hint="Задача в планировщике с правами администратора"
+        >
+          <Toggle
             checked={settings.launchAtStartup}
             onChange={(v) => set({ launchAtStartup: v })}
           />
-          <Switch
-            label="Подключаться к последнему профилю"
-            desc="Автоматически поднимать туннель при старте"
+        </Row>
+        <Row
+          label="Подключаться при старте"
+          hint="Поднимать туннель к последнему профилю"
+        >
+          <Toggle
             checked={settings.autoConnect}
             onChange={(v) => set({ autoConnect: v })}
           />
-        </div>
-      </Section>
-      <Section icon={<Monitor size={16} />} title="Окно">
-        <div className="flex flex-col gap-3">
-          <Switch
-            label="Сворачивать в трей"
-            desc="Прятать окно в область уведомлений вместо панели задач"
+        </Row>
+        <Row
+          label="Сворачивать в трей"
+          hint="Прятать окно в область уведомлений, а не на панель задач"
+        >
+          <Toggle
             checked={settings.minimizeToTray}
             onChange={(v) => set({ minimizeToTray: v })}
           />
-        </div>
-      </Section>
+        </Row>
+      </div>
     </div>
   );
 }
@@ -556,84 +834,201 @@ function Connection({
   disabled: boolean;
 }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-7">
+    <div className="flex max-w-xl flex-col gap-4">
       {disabled && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs text-text-muted">
-          <Lock size={14} className="text-text-faint" />
-          Параметры соединения заблокированы, пока туннель активен.
+          <Lock size={14} className="shrink-0 text-text-faint" />
+          Параметры заблокированы, пока туннель активен
         </div>
       )}
 
-      <Section icon={<Cpu size={16} />} title="Ядро">
-        <div className="grid grid-cols-2 gap-3">
-          <Card
-            active={settings.core === "sing-box"}
-            disabled={disabled}
-            title="sing-box"
-            desc="Нативный TUN + auto_route. Рекомендуется."
-            onClick={() => set({ core: "sing-box" as Core })}
-          />
-          <Card
-            active={settings.core === "xray"}
-            disabled={disabled}
-            title="xray"
-            desc="Xray-core + tun2socks через WinTun."
-            onClick={() => set({ core: "xray" as Core })}
-          />
-        </div>
-      </Section>
-
-      <Section icon={<Network size={16} />} title="TUN интерфейс">
-        <Field label="Имя адаптера">
+      {/* No overflow-hidden on the card: the stack dropdown is absolutely
+          positioned and would be clipped by it. Nothing inside paints over the
+          rounded corners, so the clip was not buying anything. */}
+      <div className="rounded-lg border border-border bg-surface">
+        <Row label="Адаптер" hint="Имя WinTun-адаптера в системе">
           <input
             value={settings.tunName}
             disabled={disabled}
             onChange={(e) => set({ tunName: e.target.value })}
             placeholder="TomorrowTun"
-            className={inputCls}
+            spellCheck={false}
+            className={`${cellInput} w-44`}
           />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Сетевой стек (sing-box)">
-            <div className="grid grid-cols-2 gap-2">
-              {["gvisor", "system"].map((s) => (
-                <button
-                  key={s}
-                  disabled={disabled}
-                  onClick={() => set({ stack: s })}
-                  className={`rounded-lg border py-2 font-mono text-xs transition disabled:cursor-not-allowed ${
-                    (settings.stack || "gvisor") === s
-                      ? "border-accent/60 bg-surface-2 text-text"
-                      : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+        </Row>
+
+        <Row label="Сетевой стек" hint="Как ядро обрабатывает пакеты TUN">
+          <Select
+            value={settings.stack || "gvisor"}
+            disabled={disabled}
+            onChange={(v) => set({ stack: v })}
+            options={STACKS}
+          />
+        </Row>
+
+        <Row label="MTU" hint="0 — значение ядра по умолчанию">
+          <input
+            type="number"
+            value={settings.mtu || 0}
+            disabled={disabled}
+            onChange={(e) => set({ mtu: parseInt(e.target.value) || 0 })}
+            placeholder="0"
+            className={`${cellInput} w-44`}
+          />
+        </Row>
+      </div>
+
+      <div className="rounded-lg border border-border bg-surface">
+        <Row label="DNS основной" hint="Резолвер внутри туннеля">
+          <input
+            value={settings.dns}
+            disabled={disabled}
+            onChange={(e) => set({ dns: e.target.value })}
+            placeholder="1.1.1.1"
+            spellCheck={false}
+            className={`${cellInput} w-44`}
+          />
+        </Row>
+
+        <Row label="DNS резервный" hint="Для запросов в обход туннеля">
+          <input
+            value={settings.dnsFallback}
+            disabled={disabled}
+            onChange={(e) => set({ dnsFallback: e.target.value })}
+            placeholder="8.8.8.8"
+            spellCheck={false}
+            className={`${cellInput} w-44`}
+          />
+        </Row>
+      </div>
+    </div>
+  );
+}
+
+// STACKS are the TUN network stacks sing-box accepts.
+const STACKS: SelectOption[] = [
+  { id: "gvisor", label: "gvisor", hint: "Пользовательский стек, надёжнее" },
+  { id: "mixed", label: "mixed", hint: "gvisor для TCP, system для UDP" },
+  { id: "system", label: "system", hint: "Системный стек, быстрее" },
+];
+
+// Row is one label/control line inside a settings card.
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border/60 px-4 py-3 last:border-0">
+      <div className="min-w-0">
+        <div className="text-sm text-text">{label}</div>
+        {hint && <div className="text-xs text-text-faint">{hint}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+export interface SelectOption {
+  id: string;
+  label: string;
+  hint?: string;
+}
+
+// Select is a small dropdown: the trigger shows the current value and its
+// chevron rotates while a compact menu is open. Built by hand rather than with
+// <select>, whose popup is drawn by the OS and ignores the app's theme.
+function Select({
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  options: SelectOption[];
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.id === value) ?? options[0];
+
+  // Dismiss on an outside click or Escape, the way a native menu behaves.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // A disabled control must not be left hanging open.
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={`flex w-44 items-center justify-between gap-2 rounded-lg border bg-bg px-3 py-2 font-mono text-sm text-text transition disabled:cursor-not-allowed disabled:opacity-60 ${
+          open ? "border-accent/60" : "border-border hover:border-text-faint"
+        }`}
+      >
+        {current.label}
+        <ChevronDown
+          size={14}
+          className={`shrink-0 text-text-faint transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div className="animate-pop absolute right-0 z-30 mt-1.5 w-56 overflow-hidden rounded-lg border border-border bg-surface-2 shadow-xl">
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => {
+                onChange(o.id);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface"
+            >
+              <span className="min-w-0 flex-1">
+                <span
+                  className={`block font-mono text-sm ${
+                    o.id === value ? "text-text" : "text-text-muted"
                   }`}
                 >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="MTU (0 — по умолчанию)">
-            <input
-              type="number"
-              value={settings.mtu || 0}
-              disabled={disabled}
-              onChange={(e) => set({ mtu: parseInt(e.target.value) || 0 })}
-              placeholder="0"
-              className={inputCls}
-            />
-          </Field>
+                  {o.label}
+                </span>
+                {o.hint && (
+                  <span className="block text-[11px] text-text-faint">
+                    {o.hint}
+                  </span>
+                )}
+              </span>
+              {o.id === value && (
+                <Check size={14} className="shrink-0 text-accent" />
+              )}
+            </button>
+          ))}
         </div>
-      </Section>
-
-      <Section icon={<Globe2 size={16} />} title="DNS">
-        <input
-          value={settings.dns}
-          disabled={disabled}
-          onChange={(e) => set({ dns: e.target.value })}
-          placeholder="1.1.1.1"
-          className={inputCls}
-        />
-      </Section>
+      )}
     </div>
   );
 }
@@ -712,71 +1107,494 @@ function Logs() {
 
 /* --------------------------------- Developer --------------------------------- */
 
-function Developer({ settings }: { settings: AppSettings }) {
-  const [config, setConfig] = useState<string>("");
-  const [err, setErr] = useState<string>("");
-  const [copied, setCopied] = useState(false);
+function Developer({
+  settings,
+  set,
+  onApply,
+}: {
+  settings: AppSettings;
+  set: SetFn;
+  onApply: (s: AppSettings) => void;
+}) {
+  return (
+    <div className="flex max-w-2xl flex-col gap-7 pb-2">
+      <ActiveProfileDump />
+      <CoreConfig core={settings.core} />
+      <SettingsDump />
+      <NetDiag />
+      <Simulation />
+      <Maintenance />
+
+      <Section icon={<Bug size={16} />} title="Режим разработчика">
+        <ActionRow
+          icon={<BugOff size={15} />}
+          title="Выключить режим разработчика"
+          desc="Раздел исчезнет из настроек. Вернуть — снова 10 раз нажать на название в «О приложении»"
+          action={
+            <ToolButton onClick={() => set({ devMode: false })}>
+              Выключить
+            </ToolButton>
+          }
+        />
+      </Section>
+
+      <DangerZone onApply={onApply} />
+    </div>
+  );
+}
+
+// ActiveProfileDump shows the currently selected server as it is stored — every
+// field parsed out of the share link, including the ones no screen displays.
+function ActiveProfileDump() {
+  const [json, setJson] = useState("");
+  const [err, setErr] = useState("");
 
   const load = async () => {
     setErr("");
     try {
-      const c = await PreviewConfig();
-      setConfig(c as string);
+      setJson((await GetActiveProfileJSON()) as string);
+    } catch (e: any) {
+      setJson("");
+      setErr(String(e?.message ?? e));
+    }
+  };
+
+  return (
+    <Section icon={<Server size={16} />} title="Активный конфиг">
+      <p className="text-xs leading-relaxed text-text-muted">
+        Выбранный сейчас сервер целиком: протокол, транспорт, TLS и ключи —
+        всё, что удалось разобрать из ссылки.
+      </p>
+      <div className="flex gap-2">
+        <ToolButton onClick={load} primary>
+          Показать конфиг
+        </ToolButton>
+        {json && <CopyButton text={json} labelled />}
+      </div>
+      {err && <ErrorBox text={err} />}
+      {json && <Output text={json} />}
+    </Section>
+  );
+}
+
+// SIM_SCENARIOS mirrors the ids accepted by the SimulateStatus binding.
+const SIM_SCENARIOS: { id: string; label: string; tone?: "ok" | "danger" }[] = [
+  { id: "connecting", label: "Подключение…" },
+  { id: "connected", label: "Подключено", tone: "ok" },
+  { id: "disconnected", label: "Отключено" },
+  { id: "error", label: "Ошибка подключения", tone: "danger" },
+  { id: "no-internet", label: "Нет интернета", tone: "danger" },
+  { id: "no-wintun", label: "Нет wintun.dll", tone: "danger" },
+  { id: "no-admin", label: "Нет прав администратора", tone: "danger" },
+  { id: "timeout", label: "Таймаут", tone: "danger" },
+  { id: "handshake", label: "Обрыв рукопожатия", tone: "danger" },
+];
+
+// Simulation pushes fake connection states to the UI so every screen can be
+// checked without a working server.
+function Simulation() {
+  const [active, setActive] = useState<string | null>(null);
+
+  const play = async (id: string) => {
+    try {
+      await SimulateStatus(id);
+      setActive(id);
+    } catch (e: any) {
+      push(String(e?.message ?? e), "error");
+    }
+  };
+
+  const stop = async () => {
+    await StopSimulation();
+    setActive(null);
+    push("Эмуляция остановлена", "info");
+  };
+
+  return (
+    <Section icon={<PlayCircle size={16} />} title="Эмуляция состояний">
+      <p className="text-xs leading-relaxed text-text-muted">
+        Подменяет то, что показывает интерфейс — туннель не поднимается и ядро
+        не запускается. «Подключено» ещё и крутит счётчики трафика. Реальное
+        событие от движка перебивает эмуляцию.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {SIM_SCENARIOS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => play(s.id)}
+            className={`rounded-lg border px-2 py-2 text-xs transition ${
+              active === s.id
+                ? "border-accent/60 bg-surface-2 text-text"
+                : s.tone === "danger"
+                ? "border-border bg-surface text-danger/80 hover:bg-surface-2/60"
+                : s.tone === "ok"
+                ? "border-border bg-surface text-ok/90 hover:bg-surface-2/60"
+                : "border-border bg-surface text-text-muted hover:bg-surface-2/60"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {active && (
+        <div className="flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-accent">
+          <PlayCircle size={14} />
+          <span className="flex-1">Эмуляция активна — состояние подменено</span>
+          <button
+            onClick={stop}
+            className="flex items-center gap-1 rounded-md border border-accent/40 px-2 py-1 transition hover:bg-accent/15"
+          >
+            <Square size={11} />
+            Остановить
+          </button>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// CoreConfig previews the JSON handed to the active core.
+function CoreConfig({ core }: { core: string }) {
+  const [config, setConfig] = useState("");
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    setErr("");
+    try {
+      setConfig((await PreviewConfig()) as string);
     } catch (e: any) {
       setConfig("");
       setErr(String(e?.message ?? e));
     }
   };
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(config);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  return (
+    <Section icon={<FileJson size={16} />} title="Конфигурация ядра">
+      <p className="text-xs leading-relaxed text-text-muted">
+        Сгенерированный JSON, который передаётся активному ядру (
+        <span className="font-mono text-text">{core}</span>) для выбранного
+        профиля.
+      </p>
+      <div className="flex gap-2">
+        <ToolButton onClick={load} primary>
+          Показать конфиг
+        </ToolButton>
+        {config && <CopyButton text={config} labelled />}
+      </div>
+      {err && <ErrorBox text={err} />}
+      {config && <Output text={config} />}
+    </Section>
+  );
+}
+
+// SettingsDump shows the settings exactly as persisted on disk.
+function SettingsDump() {
+  const [json, setJson] = useState("");
+
+  return (
+    <Section icon={<Terminal size={16} />} title="Настройки (JSON)">
+      <p className="text-xs leading-relaxed text-text-muted">
+        Содержимое <span className="font-mono text-text">settings.json</span> —
+        включая поля, которых нет в интерфейсе.
+      </p>
+      <div className="flex gap-2">
+        <ToolButton onClick={async () => setJson((await GetSettingsJSON()) as string)}>
+          Показать
+        </ToolButton>
+        {json && <CopyButton text={json} labelled />}
+      </div>
+      {json && <Output text={json} />}
+    </Section>
+  );
+}
+
+// NetDiag dumps the interface and IPv4 route tables.
+function NetDiag() {
+  const [out, setOut] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      setOut((await RunNetDiag()) as string);
+    } catch (e: any) {
+      setOut("");
+      setErr(String(e?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="flex max-w-2xl flex-col gap-7">
-      <Section icon={<FileJson size={16} />} title="Конфигурация ядра">
-        <p className="text-xs leading-relaxed text-text-muted">
-          Сгенерированный JSON, который передаётся активному ядру (
-          <span className="font-mono text-text">{settings.core}</span>) для
-          выбранного профиля.
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
-          >
-            Показать конфиг
-          </button>
-          {config && (
-            <button
-              onClick={copy}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2 hover:text-text"
-            >
-              {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? "Скопировано" : "Копировать"}
-            </button>
-          )}
-        </div>
-        {err && (
-          <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
-            {err}
+    <Section icon={<Network size={16} />} title="Сетевая диагностика">
+      <p className="text-xs leading-relaxed text-text-muted">
+        Таблица интерфейсов и маршрутов IPv4 — здесь видно, поднялся ли TUN и
+        куда уходит трафик по умолчанию.
+      </p>
+      <div className="flex gap-2">
+        <ToolButton onClick={load} disabled={busy}>
+          <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
+          {busy ? "Собираю…" : "Собрать"}
+        </ToolButton>
+        {out && <CopyButton text={out} labelled />}
+      </div>
+      {err && <ErrorBox text={err} />}
+      {out && <Output text={out} />}
+    </Section>
+  );
+}
+
+// Maintenance groups the non-destructive recovery tools.
+function Maintenance() {
+  const exportDiag = async () => {
+    try {
+      const path = (await ExportDiagnostics()) as string;
+      push(`Отчёт сохранён: ${path}`, "ok");
+    } catch (e: any) {
+      push(String(e?.message ?? e), "error");
+    }
+  };
+
+  return (
+    <Section icon={<Download size={16} />} title="Обслуживание">
+      <div className="flex flex-col gap-2">
+        <ActionRow
+          icon={<Download size={15} />}
+          title="Выгрузить отчёт"
+          desc="Среда, настройки и лог ядра в один текстовый файл"
+          action={<ToolButton onClick={exportDiag}>Выгрузить</ToolButton>}
+        />
+      </div>
+    </Section>
+  );
+}
+
+// DangerZone sits at the very bottom and holds the irreversible actions, each
+// behind a two-step confirmation.
+function DangerZone({ onApply }: { onApply: (s: AppSettings) => void }) {
+  const doResetSettings = async () => {
+    await ResetSettings();
+    onApply((await GetSettings()) as AppSettings);
+    push("Настройки сброшены", "ok");
+  };
+
+  // ResetAllData clears DevMode too, so this section disappears with it — the
+  // frontend reloads through the "app:datareset" event fired by the backend.
+  const doResetAll = async () => {
+    await ResetAllData();
+  };
+
+  return (
+    <section className="flex flex-col gap-2.5 rounded-lg border border-danger/30 bg-danger/[0.04] p-4">
+      <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wide text-danger">
+        <AlertTriangle size={16} />
+        Опасная зона
+      </div>
+      <div className="flex flex-col gap-2">
+        <ConfirmRow
+          icon={<RotateCcw size={15} />}
+          title="Сбросить настройки"
+          desc="Вернуть параметры по умолчанию. Профили и подписки останутся"
+          cta="Сбросить"
+          confirmCta="Точно сбросить"
+          onConfirm={doResetSettings}
+        />
+        <ConfirmRow
+          icon={<Trash size={15} />}
+          title="Удалить все данные"
+          desc="Профили, подписки и настройки — всё как после установки. Туннель будет разорван, режим разработчика выключится"
+          cta="Удалить всё"
+          confirmCta="Да, удалить всё"
+          onConfirm={doResetAll}
+        />
+      </div>
+    </section>
+  );
+}
+
+// ConfirmRow is an action row whose button turns into a confirm/cancel pair on
+// the first click, so an irreversible action always takes two deliberate taps.
+function ConfirmRow({
+  icon,
+  title,
+  desc,
+  cta,
+  confirmCta,
+  onConfirm,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  cta: string;
+  confirmCta: string;
+  onConfirm: () => Promise<void>;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      await onConfirm();
+    } catch (e: any) {
+      push(String(e?.message ?? e), "error");
+    } finally {
+      setBusy(false);
+      setArmed(false);
+    }
+  };
+
+  return (
+    <ActionRow
+      icon={icon}
+      title={title}
+      desc={desc}
+      action={
+        armed ? (
+          <div className="flex gap-2">
+            <ToolButton onClick={() => setArmed(false)} disabled={busy}>
+              Отмена
+            </ToolButton>
+            <ToolButton onClick={go} danger disabled={busy}>
+              {confirmCta}
+            </ToolButton>
           </div>
-        )}
-        {config && (
-          <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-text-muted">
-            {config}
-          </pre>
-        )}
-      </Section>
+        ) : (
+          <ToolButton onClick={() => setArmed(true)} danger>
+            {cta}
+          </ToolButton>
+        )
+      }
+    />
+  );
+}
+
+function ActionRow({
+  icon,
+  title,
+  desc,
+  action,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  action: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3">
+      <span className="shrink-0 text-text-faint">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-text">{title}</div>
+        <div className="text-xs text-text-faint">{desc}</div>
+      </div>
+      <div className="shrink-0">{action}</div>
     </div>
+  );
+}
+
+/* ----------------------------- Developer helpers ----------------------------- */
+
+function Output({ text }: { text: string }) {
+  return (
+    <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-text-muted">
+      {text}
+    </pre>
+  );
+}
+
+function ErrorBox({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+      {text}
+    </div>
+  );
+}
+
+function ToolButton({
+  onClick,
+  children,
+  primary,
+  danger,
+  disabled,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+  primary?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  const tone = primary
+    ? "bg-accent text-bg hover:bg-accent-soft"
+    : danger
+    ? "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20"
+    : "border border-border bg-surface text-text-muted hover:bg-surface-2 hover:text-text";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${tone}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CopyButton({ text, labelled }: { text: string; labelled?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  if (!labelled) {
+    return (
+      <button
+        onClick={copy}
+        title="Копировать"
+        className="shrink-0 rounded-md p-1.5 text-text-faint transition hover:bg-surface-2 hover:text-text"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+    );
+  }
+  return (
+    <ToolButton onClick={copy}>
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+      {copied ? "Скопировано" : "Копировать"}
+    </ToolButton>
   );
 }
 
 /* ----------------------------------- About ----------------------------------- */
 
-function About({ appInfo }: { appInfo: AppInfo | null }) {
+function About({
+  appInfo,
+  devMode,
+  onUnlock,
+}: {
+  appInfo: AppInfo | null;
+  devMode: boolean;
+  onUnlock: () => void;
+}) {
+  // Tapping the client name repeatedly unlocks the developer section. The
+  // counter only lives while the About page is mounted, so leaving resets it.
+  const [taps, setTaps] = useState(0);
+  const left = TAPS_TO_UNLOCK - taps;
+
+  const tap = () => {
+    if (devMode) return;
+    const n = taps + 1;
+    if (n >= TAPS_TO_UNLOCK) {
+      setTaps(0);
+      onUnlock();
+      push("Режим разработчика включён", "ok");
+      return;
+    }
+    setTaps(n);
+  };
+
   return (
     <div className="flex max-w-2xl flex-col gap-7">
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
@@ -784,20 +1602,30 @@ function About({ appInfo }: { appInfo: AppInfo | null }) {
           <div className="grid h-14 w-14 place-items-center rounded-lg bg-accent/15 font-mono text-lg font-semibold text-accent">
             TC
           </div>
-          <div>
-            <div className="text-base font-medium text-text">TomorrowClient</div>
+          <div className="min-w-0">
+            <button
+              onClick={tap}
+              className="select-none text-left text-base font-medium text-text outline-none"
+            >
+              TomorrowClient
+            </button>
             <div className="font-mono text-xs text-text-faint">
               версия {appInfo?.version ?? "—"}
             </div>
+            {!devMode && taps >= 3 && (
+              <div className="mt-1 font-mono text-[11px] text-text-faint">
+                ещё {left} {plural(left, "шаг", "шага", "шагов")}…
+              </div>
+            )}
           </div>
         </div>
         <div className="flex flex-col gap-3 p-5">
           <p className="text-sm leading-relaxed text-text-muted">
-            Минималистичный VPN-клиент для Windows на WinTun с поддержкой двух
-            ядер — sing-box и xray-core.
+            Минималистичный VPN-клиент для Windows на WinTun. Ядро sing-box
+            встроено в приложение и работает в его процессе.
           </p>
           <div className="flex flex-wrap gap-2">
-            {(appInfo?.builtWith ?? "Wails · Go · React · sing-box · xray-core")
+            {(appInfo?.builtWith ?? "Wails · Go · React · sing-box")
               .split("·")
               .map((t) => (
                 <span
@@ -819,8 +1647,11 @@ function About({ appInfo }: { appInfo: AppInfo | null }) {
 
 /* --------------------------------- Primitives -------------------------------- */
 
-const inputCls =
-  "w-full rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 disabled:opacity-60";
+// cellInput is the compact field used inside settings rows. Text reads from the
+// left edge: right-aligning a name like "TomorrowTun" pushed it away from the
+// caret and made the field look like a number box.
+const cellInput =
+  "rounded-lg border border-border bg-bg px-3 py-2 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 disabled:opacity-60";
 
 function Section({
   icon,
@@ -842,80 +1673,30 @@ function Section({
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs text-text-faint">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Card({
-  active,
-  disabled,
-  title,
-  desc,
-  onClick,
-}: {
-  active: boolean;
-  disabled: boolean;
-  title: string;
-  desc: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex flex-col gap-1 rounded-lg border px-4 py-3 text-left transition disabled:cursor-not-allowed ${
-        active
-          ? "border-accent/60 bg-surface-2"
-          : "border-border bg-surface hover:bg-surface-2/60"
-      }`}
-    >
-      <span className="text-sm text-text">{title}</span>
-      <span className="text-xs text-text-faint">{desc}</span>
-    </button>
-  );
-}
-
-function Switch({
-  label,
-  desc,
+// Toggle is the bare on/off pill, used on its own inside settings rows.
+function Toggle({
   checked,
   onChange,
 }: {
-  label: string;
-  desc: string;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
-      <div className="flex flex-col">
-        <span className="text-sm text-text">{label}</span>
-        <span className="text-xs text-text-faint">{desc}</span>
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative h-5 w-9 shrink-0 rounded-full transition ${
-          checked ? "bg-accent" : "bg-border"
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+        checked ? "bg-accent" : "bg-border"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
+          checked ? "left-[18px]" : "left-0.5"
         }`}
-      >
-        <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-all ${
-            checked ? "left-[18px]" : "left-0.5"
-          }`}
-        />
-      </button>
-    </label>
+      />
+    </button>
   );
 }
+

@@ -35,7 +35,6 @@ type Engine struct {
 	lastTick time.Time
 
 	sb   *sbRunner
-	xr   *xRunner
 	emit Emitter
 	logs *LogSink
 
@@ -106,16 +105,8 @@ func (e *Engine) Connect(p model.Profile, s model.AppSettings) error {
 	activeTunName = s.TunInterfaceName()
 	e.setState(model.StateConnecting, "")
 
-	var err error
-	switch s.Core {
-	case model.CoreXray:
-		e.xr = &xRunner{logs: e.logs}
-		err = e.xr.start(p, s)
-	default: // sing-box is the default
-		e.sb = &sbRunner{logs: e.logs}
-		err = e.sb.start(p, s)
-	}
-	if err != nil {
+	e.sb = &sbRunner{logs: e.logs}
+	if err := e.sb.start(p, s); err != nil {
 		e.teardownLocked()
 		e.setState(model.StateError, err.Error())
 		return err
@@ -150,10 +141,6 @@ func (e *Engine) teardownLocked() {
 	if e.sb != nil {
 		e.sb.stop()
 		e.sb = nil
-	}
-	if e.xr != nil {
-		e.xr.stop()
-		e.xr = nil
 	}
 }
 

@@ -18,29 +18,35 @@ interface Props {
 // Navigation tabs: a vertical rail on the left or a horizontal bar on top,
 // chosen in Settings → Внешний вид.
 export default function Sidebar({ active, position, onSelect }: Props) {
+  // Top mode is a floating pill bar rather than a full-width strip: one rounded
+  // container holding the tabs, with the active one outlined in the accent.
+  // Both the container and the tabs use rounded-lg so they follow the corner
+  // rounding chosen in Settings → Внешний вид.
   if (position === "top") {
     return (
-      <nav className="flex shrink-0 items-center justify-center gap-1 border-b border-border bg-surface/40 px-3 py-2">
-        {NAV.map(({ key, label, icon: Icon }) => {
-          const isActive = active === key;
-          return (
-            <button
-              key={key}
-              onClick={() => onSelect(key)}
-              className={`relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
-                isActive
-                  ? "bg-surface-2 text-text"
-                  : "text-text-muted hover:bg-surface-2/60 hover:text-text"
-              }`}
-            >
-              {isActive && (
-                <span className="absolute inset-x-3 -bottom-2 h-0.5 rounded-full bg-accent" />
-              )}
-              <Icon size={16} className={isActive ? "text-accent" : ""} />
-              {label}
-            </button>
-          );
-        })}
+      <nav className="flex shrink-0 justify-center px-3 py-3">
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1.5 shadow-lg shadow-black/20">
+          {NAV.map(({ key, label, icon: Icon }) => {
+            const isActive = active === key;
+            return (
+              <button
+                key={key}
+                onClick={() => onSelect(key)}
+                className={`flex items-center gap-2 rounded-lg border px-3.5 py-1.5 text-sm transition ${
+                  isActive
+                    ? "border-accent/50 bg-surface-2 text-text shadow-md shadow-accent/15"
+                    : "border-transparent text-text-muted hover:bg-surface-2/60 hover:text-text"
+                }`}
+              >
+                <Icon
+                  size={15}
+                  className={isActive ? "text-accent" : "text-text-faint"}
+                />
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </nav>
     );
   }

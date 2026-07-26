@@ -2,13 +2,13 @@
 // React frontend (they are exported through the Wails bindings).
 package model
 
-// Core selects which proxy engine handles the traffic.
+// Core names the proxy engine handling the traffic. sing-box is the only one:
+// it is linked into the app and runs in-process with a native TUN inbound and
+// auto_route, managing the system routing table itself. The type is kept so the
+// UI and status snapshots can still report which core is running.
 type Core string
 
-const (
-	CoreSingBox Core = "sing-box" // default: native TUN + auto_route, manages its own routing
-	CoreXray    Core = "xray"     // xray SOCKS + tun2socks WinTun adapter + manual routes
-)
+const CoreSingBox Core = "sing-box"
 
 // ConnState is the high level connection state reported to the UI.
 type ConnState string
@@ -18,14 +18,6 @@ const (
 	StateConnecting   ConnState = "connecting"
 	StateConnected    ConnState = "connected"
 	StateError        ConnState = "error"
-)
-
-// RoutingMode controls how much traffic is sent through the tunnel.
-type RoutingMode string
-
-const (
-	RoutingGlobal RoutingMode = "global" // everything through the proxy
-	RoutingRules  RoutingMode = "rules"  // bypass LAN + direct-list, proxy the rest
 )
 
 // Protocol is the outbound proxy protocol of a profile.
@@ -113,16 +105,20 @@ type RoutingRule struct {
 	Type   string `json:"type"`   // "domain" | "ip" | "process"
 	Value  string `json:"value"`  // domain suffix, IP/CIDR, or process name
 	Action string `json:"action"` // "proxy" | "direct" | "block"
+	Icon   string `json:"icon"`   // process rules only: PNG data URL of the app icon
 }
 
 // AppSettings is the persisted user configuration.
 type AppSettings struct {
 	// --- Connection ---
-	Core            Core        `json:"core"`
-	ActiveProfileID string      `json:"activeProfileId"`
-	RoutingMode     RoutingMode `json:"routingMode"`
-	// DNS server used inside the tunnel.
+	Core            Core   `json:"core"`
+	ActiveProfileID string `json:"activeProfileId"`
+	// DNS is the primary resolver, queried through the tunnel.
 	DNS string `json:"dns"`
+	// DNSFallback resolves the names that are routed around the tunnel
+	// (LAN, direct rules). sing-box has no automatic failover between
+	// resolvers, so this is a second resolver rather than a stand-in.
+	DNSFallback string `json:"dnsFallback"`
 	// TunName is the name of the WinTun adapter both cores create. Empty means
 	// the built-in default ("TomorrowTun").
 	TunName string `json:"tunName"`
@@ -141,23 +137,33 @@ type AppSettings struct {
 	// MinimizeToTray hides the window to the notification area on minimize
 	// instead of the taskbar.
 	MinimizeToTray bool `json:"minimizeToTray"`
+	// DevMode unlocks the developer tools section. It is hidden until the user
+	// taps the client name on the About screen ten times.
+	DevMode bool `json:"devMode"`
 
 	// --- Appearance ---
 	// Theme is the base preset id ("graphite" / "midnight" / "coal").
 	Theme string `json:"theme"`
-	// Accent is a hex color id from the palette ("indigo", "teal", ...).
+	// Accent is a hex color id from the palette ("indigo", "teal", ...) or a
+	// raw "#rrggbb" when the user picked a custom one.
 	Accent string `json:"accent"`
+	// SavedColors are custom hex accents the user chose to keep, in the order
+	// they were saved.
+	SavedColors []string `json:"savedColors"`
 	// Font is the UI font id ("inter" / "mono" / "geist").
 	Font string `json:"font"`
 	// Radius is the corner rounding preset ("sharp" / "soft" / "round").
 	Radius string `json:"radius"`
 	// NavPosition places the navigation tabs on the "left" (default) or "top".
 	NavPosition string `json:"navPosition"`
+	// Animation is the entrance animation preset for views and modals
+	// ("rise" / "slide" / "fade" / "scale" / "none").
+	Animation string `json:"animation"`
 }
 
 // TunInterfaceName returns the configured TUN adapter name, falling back to the
 // built-in default when unset. This is the single source of truth shared by the
-// sing-box config, the xray route setup, and the traffic-stats matcher.
+// sing-box config and the traffic-stats matcher.
 func (s AppSettings) TunInterfaceName() string {
 	if s.TunName != "" {
 		return s.TunName
@@ -173,9 +179,9 @@ const DefaultTunName = "TomorrowTun"
 func DefaultSettings() AppSettings {
 	return AppSettings{
 		Core:        CoreSingBox,
-		RoutingMode: RoutingRules,
 		AutoConnect: false,
 		DNS:         "1.1.1.1",
+		DNSFallback: "8.8.8.8",
 		TunName:     DefaultTunName,
 		Stack:       "gvisor",
 		MTU:         0,
@@ -184,6 +190,7 @@ func DefaultSettings() AppSettings {
 		Font:        "inter",
 		Radius:      "soft",
 		NavPosition: "left",
+		Animation:   "rise",
 	}
 }
 

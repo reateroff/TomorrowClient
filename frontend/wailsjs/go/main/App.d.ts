@@ -15,6 +15,10 @@ export function DeleteSubscription(arg1:string):Promise<void>;
 
 export function Disconnect():Promise<void>;
 
+export function ExportDiagnostics():Promise<string>;
+
+export function GetActiveProfileJSON():Promise<string>;
+
 export function GetAppInfo():Promise<main.AppInfo>;
 
 export function GetLogs():Promise<Array<string>>;
@@ -23,20 +27,32 @@ export function GetProfiles():Promise<Array<model.Profile>>;
 
 export function GetSettings():Promise<model.AppSettings>;
 
+export function GetSettingsJSON():Promise<string>;
+
 export function GetStatus():Promise<model.Status>;
 
 export function GetSubscriptions():Promise<Array<model.Subscription>>;
 
 export function ImportLink(arg1:string):Promise<model.Profile>;
 
-export function ListProcesses():Promise<Array<string>>;
+export function ListProcesses():Promise<Array<main.ProcessInfo>>;
 
 export function PingProfile(arg1:string):Promise<number>;
 
 export function PreviewConfig():Promise<string>;
 
+export function ResetAllData():Promise<void>;
+
+export function ResetSettings():Promise<void>;
+
+export function RunNetDiag():Promise<string>;
+
 export function SaveProfile(arg1:model.Profile):Promise<void>;
 
 export function SaveSettings(arg1:model.AppSettings):Promise<void>;
+
+export function SimulateStatus(arg1:string):Promise<void>;
+
+export function StopSimulation():Promise<void>;
 
 export function UpdateSubscription(arg1:string):Promise<model.Subscription>;

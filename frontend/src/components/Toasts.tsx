@@ -52,7 +52,7 @@ export default function Toasts() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="animate-fade-up flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-border bg-surface py-2.5 pl-3.5 pr-2 shadow-lg"
+          className="animate-view flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-border bg-surface py-2.5 pl-3.5 pr-2 shadow-lg"
         >
           {ICON[t.kind]}
           <span className="truncate text-sm text-text">{t.message}</span>

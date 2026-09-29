@@ -34,8 +34,15 @@ import {
   ChevronDown,
   Plus,
   EyeOff,
+  Activity,
+  Radar,
+  Plug,
+  Globe,
+  Timer,
+  Fingerprint,
+  Shuffle,
 } from "lucide-react";
-import type { AppInfo, AppSettings } from "../types";
+import type { AppInfo, AppSettings, CoreInfo } from "../types";
 import {
   THEME_PRESETS,
   ACCENTS,
@@ -61,9 +68,13 @@ import {
   ResetAllData,
   SimulateStatus,
   StopSimulation,
+  GetCores,
+  GetDeviceInfo,
+  SubscriptionHeaders,
 } from "../../wailsjs/go/main/App";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { plural } from "../format";
+import { CORE_LABEL } from "../proto";
 import { push } from "./Toasts";
 import logo from "../assets/logo.png";
 
@@ -74,6 +85,8 @@ type TabKey =
   | "appearance"
   | "application"
   | "connection"
+  | "ping"
+  | "hwid"
   | "logs"
   | "developer"
   | "about";
@@ -104,6 +117,18 @@ const MENU: MenuItem[] = [
     label: "Соединение",
     subtitle: "Ядро, TUN, DNS, MTU",
     icon: <Network size={18} />,
+  },
+  {
+    key: "ping",
+    label: "Проверка серверов",
+    subtitle: "Метод пинга, адрес, таймаут",
+    icon: <Activity size={18} />,
+  },
+  {
+    key: "hwid",
+    label: "Устройство и HWID",
+    subtitle: "Что видит панель подписки",
+    icon: <Fingerprint size={18} />,
   },
   {
     key: "logs",
@@ -240,6 +265,8 @@ export default function SettingsView({
         {tab === "connection" && (
           <Connection settings={settings} set={set} disabled={disabled} />
         )}
+        {tab === "ping" && <PingSettings settings={settings} set={set} />}
+        {tab === "hwid" && <HWIDSettings settings={settings} set={set} />}
         {tab === "logs" && <Logs />}
         {tab === "developer" && (
           <Developer settings={settings} set={set} onApply={onChange} />
@@ -860,6 +887,15 @@ function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
 
 /* --------------------------------- Connection -------------------------------- */
 
+// useCores loads the linked cores and their versions once per mount.
+function useCores(): CoreInfo[] {
+  const [cores, setCores] = useState<CoreInfo[]>([]);
+  useEffect(() => {
+    GetCores().then((c) => setCores((c as CoreInfo[]) ?? []));
+  }, []);
+  return cores;
+}
+
 function Connection({
   settings,
   set,
@@ -869,6 +905,17 @@ function Connection({
   set: SetFn;
   disabled: boolean;
 }) {
+  const cores = useCores();
+  const coreOptions: SelectOption[] = [
+    { id: "auto", label: "Авто", hint: "Своё ядро для каждого сервера" },
+    ...cores.map((c) => ({
+      id: c.id,
+      label: c.name,
+      hint: `${c.version ? "v" + c.version + " · " : ""}${c.description}`,
+    })),
+  ];
+  const fronted = settings.core === "xray" || settings.core === "mihomo";
+
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
       {disabled && (
@@ -878,9 +925,29 @@ function Connection({
         </div>
       )}
 
-      {/* No overflow-hidden on the card: the stack dropdown is absolutely
+      {/* No overflow-hidden on the cards: the dropdowns are absolutely
           positioned and would be clipped by it. Nothing inside paints over the
           rounded corners, so the clip was not buying anything. */}
+      <div className="rounded-lg border border-border bg-surface">
+        <Row
+          label="Ядро"
+          hint={
+            settings.core === "auto" || !settings.core
+              ? "Xray для REALITY, XHTTP и VLESS Encryption, иначе sing-box"
+              : fronted
+                ? "Туннель и маршруты — sing-box, прокси — это ядро"
+                : "Туннель, DNS и прокси в одном ядре"
+          }
+        >
+          <Select
+            value={settings.core || "auto"}
+            disabled={disabled}
+            onChange={(v) => set({ core: v as AppSettings["core"] })}
+            options={coreOptions}
+          />
+        </Row>
+      </div>
+
       <div className="rounded-lg border border-border bg-surface">
         <Row label="Адаптер" hint="Имя WinTun-адаптера в системе">
           <input
@@ -893,9 +960,9 @@ function Connection({
           />
         </Row>
 
-        <Row label="Сетевой стек" hint="Как ядро обрабатывает пакеты TUN">
+        <Row label="Сетевой стек" hint="Как туннель обрабатывает пакеты TUN">
           <Select
-            value={settings.stack || "gvisor"}
+            value={settings.stack || "mixed"}
             disabled={disabled}
             onChange={(v) => set({ stack: v })}
             options={STACKS}
@@ -915,7 +982,7 @@ function Connection({
       </div>
 
       <div className="rounded-lg border border-border bg-surface">
-        <Row label="DNS основной" hint="Резолвер внутри туннеля">
+        <Row label="DNS основной" hint="Внутри туннеля: IP, tls://, https://, quic://">
           <input
             value={settings.dns}
             disabled={disabled}
@@ -1065,6 +1132,303 @@ function Select({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------ Server checks ------------------------------ */
+
+const PING_METHODS: {
+  id: AppSettings["pingMethod"];
+  label: string;
+  hint: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    id: "get",
+    label: "Через прокси · GET",
+    hint: "Подключение и загрузка страницы через сервер. Доказывает, что профиль рабочий",
+    icon: <Globe size={16} />,
+  },
+  {
+    id: "head",
+    label: "Через прокси · HEAD",
+    hint: "То же, но запрашиваются только заголовки — чуть быстрее",
+    icon: <Plug size={16} />,
+  },
+  {
+    id: "tcp",
+    label: "TCP",
+    hint: "Рукопожатие с портом сервера. Быстро, но не проверяет ключи и TLS",
+    icon: <Radar size={16} />,
+  },
+  {
+    id: "icmp",
+    label: "ICMP",
+    hint: "Обычный ping до сервера. Многие серверы его не пропускают",
+    icon: <Activity size={16} />,
+  },
+];
+
+const PING_URLS: { label: string; url: string }[] = [
+  { label: "Cloudflare", url: "http://cp.cloudflare.com/generate_204" },
+  { label: "Google", url: "http://www.gstatic.com/generate_204" },
+  { label: "Apple", url: "http://captive.apple.com/hotspot-detect.html" },
+  { label: "Microsoft", url: "http://www.msftconnecttest.com/connecttest.txt" },
+];
+
+// PingSettings picks how servers are checked, both in the list and for the live
+// figure on the main screen. Nothing here touches the tunnel, so it stays
+// editable while connected.
+function PingSettings({ settings, set }: { settings: AppSettings; set: SetFn }) {
+  const method = settings.pingMethod || "get";
+  const viaProxy = method === "get" || method === "head";
+  const timeout = settings.pingTimeout || 5000;
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-7">
+      <Section icon={<Activity size={16} />} title="Метод">
+        <div className="grid grid-cols-2 gap-2">
+          {PING_METHODS.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => set({ pingMethod: m.id })}
+              className={`no-drag flex items-start gap-3 rounded-lg border p-3.5 text-left transition ${
+                method === m.id
+                  ? "border-accent/60 bg-surface-2"
+                  : "border-border bg-surface hover:bg-surface-2/60"
+              }`}
+            >
+              <span
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ${
+                  method === m.id ? "bg-accent/15 text-accent" : "bg-surface-2 text-text-muted"
+                }`}
+              >
+                {m.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-text">{m.label}</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-text-faint">{m.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      <Section icon={<Globe size={16} />} title="Адрес проверки">
+        <div className={`flex flex-col gap-2 ${viaProxy ? "" : "pointer-events-none opacity-50"}`}>
+          <input
+            value={settings.pingUrl}
+            onChange={(e) => set({ pingUrl: e.target.value })}
+            placeholder="http://cp.cloudflare.com/generate_204"
+            spellCheck={false}
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {PING_URLS.map((u) => (
+              <button
+                key={u.url}
+                onClick={() => set({ pingUrl: u.url })}
+                className={`no-drag rounded-md border px-2.5 py-1 text-xs transition ${
+                  settings.pingUrl === u.url
+                    ? "border-accent/60 bg-surface-2 text-text"
+                    : "border-border text-text-muted hover:text-text"
+                }`}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] leading-relaxed text-text-faint">
+            {viaProxy
+              ? "Страница запрашивается через сервер. Лучше адрес с ответом 204 и без тела — тогда время отражает задержку, а не скорость загрузки."
+              : "Используется только для проверки через прокси."}
+          </p>
+        </div>
+      </Section>
+
+      <Section icon={<Timer size={16} />} title="Таймаут">
+        <div className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
+          <input
+            type="range"
+            min={1000}
+            max={15000}
+            step={500}
+            value={timeout}
+            onChange={(e) => set({ pingTimeout: parseInt(e.target.value) })}
+            className="flex-1 accent-[var(--color-accent)]"
+          />
+          <span className="w-16 text-right font-mono text-sm text-text">{(timeout / 1000).toFixed(1)} с</span>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+/* ---------------------------------- Device ---------------------------------- */
+
+interface DeviceInfo {
+  hwid: string;
+  os: string;
+  osVersion: string;
+  model: string;
+  userAgent: string;
+}
+
+// Whole-system disguises: every field a panel reads, set to something that
+// belongs together.
+const DEVICE_PRESETS: { label: string; os: string; osVersion: string; model: string; ua: string }[] = [
+  { label: "Windows", os: "Windows", osVersion: "10.0.26100", model: "Desktop PC", ua: "v2rayN/7.13.8" },
+  { label: "macOS", os: "macOS", osVersion: "15.5", model: "MacBookPro18,3", ua: "Happ/2.9.0" },
+  { label: "Linux", os: "Linux", osVersion: "6.8.0", model: "x86_64", ua: "sing-box/1.12.0" },
+  { label: "Android", os: "Android", osVersion: "15", model: "Pixel 9", ua: "v2rayNG/1.10.16" },
+  { label: "iOS", os: "iOS", osVersion: "18.5", model: "iPhone17,1", ua: "Happ/2.9.0" },
+];
+
+const randomHWID = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
+// HWIDSettings controls what the client tells subscription panels about the
+// device. Empty fields mean the real value, shown as the placeholder.
+function HWIDSettings({ settings, set }: { settings: AppSettings; set: SetFn }) {
+  const [real, setReal] = useState<DeviceInfo | null>(null);
+  const [headers, setHeaders] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    GetDeviceInfo().then((d) => setReal(d as DeviceInfo));
+  }, []);
+  // The preview follows the saved settings, so it reflects every edit.
+  useEffect(() => {
+    const t = setTimeout(() => SubscriptionHeaders().then((h) => setHeaders(h ?? {})), 150);
+    return () => clearTimeout(t);
+  }, [settings.hwidEnabled, settings.hwid, settings.deviceOs, settings.osVersion, settings.deviceModel, settings.userAgent]);
+
+  const on = settings.hwidEnabled;
+  const spoofed = !!(settings.hwid || settings.deviceOs || settings.osVersion || settings.deviceModel || settings.userAgent);
+  const input =
+    "w-full min-w-0 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs text-text outline-none transition placeholder:text-text-faint focus:border-accent/60";
+
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-7">
+      <div className="flex items-start gap-3 rounded-lg border border-border bg-surface px-4 py-3.5">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-text">Отправлять HWID</div>
+          <div className="mt-0.5 text-[11px] leading-snug text-text-faint">
+            Заголовки устройства в запросе подписки. Нужны панелям с лимитом устройств (Remnawave, Marzban):
+            без них такая подписка может не отдать серверы.
+          </div>
+        </div>
+        <Toggle checked={on} onChange={(v) => set({ hwidEnabled: v })} />
+      </div>
+
+      <Section icon={<Fingerprint size={16} />} title="Устройство">
+        <div className={`flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 ${on ? "" : "opacity-50"}`}>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-text-muted">HWID</span>
+            <div className="flex gap-1.5">
+              <input
+                className={input}
+                value={settings.hwid}
+                disabled={!on}
+                placeholder={real?.hwid ?? ""}
+                spellCheck={false}
+                onChange={(e) => set({ hwid: e.target.value })}
+              />
+              <button
+                disabled={!on}
+                onClick={() => set({ hwid: randomHWID() })}
+                title="Случайный HWID"
+                className="no-drag shrink-0 rounded-lg border border-border px-2.5 text-text-muted transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
+              >
+                <Shuffle size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                ["deviceOs", "ОС", real?.os],
+                ["osVersion", "Версия ОС", real?.osVersion],
+                ["deviceModel", "Модель", real?.model],
+              ] as const
+            ).map(([key, label, ph]) => (
+              <div key={key} className="flex min-w-0 flex-col gap-1.5">
+                <span className="text-xs text-text-muted">{label}</span>
+                <input
+                  className={input}
+                  value={settings[key]}
+                  disabled={!on}
+                  placeholder={ph ?? ""}
+                  spellCheck={false}
+                  onChange={(e) => set({ [key]: e.target.value } as Partial<AppSettings>)}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-text-faint">Пустое поле — настоящее значение, оно показано серым.</p>
+        </div>
+      </Section>
+
+      <Section icon={<Globe size={16} />} title="User-Agent">
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+          <input
+            className={input}
+            value={settings.userAgent}
+            placeholder={real?.userAgent ?? ""}
+            spellCheck={false}
+            onChange={(e) => set({ userAgent: e.target.value })}
+          />
+          <p className="text-[11px] leading-snug text-text-faint">
+            По нему панель выбирает формат ответа. Отправляется всегда, даже с выключенным HWID.
+          </p>
+        </div>
+      </Section>
+
+      <Section icon={<Shuffle size={16} />} title="Подменить систему целиком">
+        <div className="flex flex-wrap gap-1.5">
+          {DEVICE_PRESETS.map((p) => (
+            <button
+              key={p.label}
+              onClick={() =>
+                set({
+                  hwidEnabled: true,
+                  hwid: settings.hwid || randomHWID(),
+                  deviceOs: p.os,
+                  osVersion: p.osVersion,
+                  deviceModel: p.model,
+                  userAgent: p.ua,
+                })
+              }
+              className={`no-drag rounded-lg border px-3 py-1.5 text-xs transition ${
+                settings.deviceOs === p.os && settings.deviceModel === p.model
+                  ? "border-accent/60 bg-surface-2 text-text"
+                  : "border-border text-text-muted hover:text-text"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            disabled={!spoofed}
+            onClick={() => set({ hwid: "", deviceOs: "", osVersion: "", deviceModel: "", userAgent: "" })}
+            className="no-drag rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted transition hover:text-text disabled:opacity-40"
+          >
+            Настоящие значения
+          </button>
+        </div>
+      </Section>
+
+      <Section icon={<FileJson size={16} />} title="Что уйдёт в запросе подписки">
+        <div className="rounded-lg border border-border bg-bg p-3.5 font-mono text-[11px] leading-relaxed">
+          {Object.entries(headers)
+            .sort(([a], [b]) => (a === "User-Agent" ? -1 : b === "User-Agent" ? 1 : a.localeCompare(b)))
+            .map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <span className="shrink-0 text-accent">{k}:</span>
+                <span className="break-all text-text-muted">{v}</span>
+              </div>
+            ))}
+        </div>
+      </Section>
     </div>
   );
 }
@@ -1298,7 +1662,7 @@ function Simulation() {
   );
 }
 
-// CoreConfig previews the JSON handed to the active core.
+// CoreConfig previews the config handed to the core for the active profile.
 function CoreConfig({ core, hide }: { core: string; hide: boolean }) {
   const [config, setConfig] = useState("");
   const [err, setErr] = useState("");
@@ -1316,9 +1680,10 @@ function CoreConfig({ core, hide }: { core: string; hide: boolean }) {
   return (
     <Section icon={<FileJson size={16} />} title="Конфигурация ядра">
       <p className="text-xs leading-relaxed text-text-muted">
-        Сгенерированный JSON, который передаётся активному ядру (
-        <span className="font-mono text-text">{core}</span>) для выбранного
-        профиля.
+        Сгенерированная конфигурация для выбранного профиля (ядро:{" "}
+        <span className="font-mono text-text">{CORE_LABEL[core] ?? core}</span>
+        ). Для Xray и mihomo ниже идёт ещё конфиг sing-box, который держит
+        туннель перед ними.
       </p>
       {hide ? (
         <HiddenNotice />
@@ -1656,6 +2021,7 @@ function About({
   // Tapping the client name repeatedly unlocks the developer section. The
   // counter only lives while the About page is mounted, so leaving resets it.
   const [taps, setTaps] = useState(0);
+  const cores = useCores();
   const left = TAPS_TO_UNLOCK - taps;
 
   const tap = () => {
@@ -1720,9 +2086,24 @@ function About({
           {/* The card is wide now, but a line of prose that wide is hard to
               read, so the paragraph keeps its own measure. */}
           <p className="mx-auto max-w-md text-center text-sm leading-relaxed text-text-muted">
-            Минималистичный VPN-клиент для Windows на WinTun. Ядро sing-box
-            встроено в приложение и работает в его процессе.
+            Минималистичный VPN-клиент для Windows на WinTun. Четыре ядра
+            встроены в приложение и работают в его процессе.
           </p>
+          {cores.length > 0 && (
+            <div className="mx-auto grid w-full max-w-md grid-cols-2 gap-1.5">
+              {cores.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 rounded-md border border-border bg-bg px-2.5 py-1.5"
+                >
+                  <span className="text-xs text-text-muted">{c.name}</span>
+                  <span className="truncate font-mono text-[11px] text-text-faint">
+                    {c.version || "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap justify-center gap-1.5">
             {(appInfo?.builtWith ?? "Wails · Go · React · sing-box")
               .split("·")

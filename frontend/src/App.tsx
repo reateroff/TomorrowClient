@@ -6,7 +6,7 @@ import ProfilesView from "./components/ProfilesView";
 import ConfigsView from "./components/ConfigsView";
 import RoutingView from "./components/RoutingView";
 import SettingsView from "./components/SettingsView";
-import Toasts, { push } from "./components/Toasts";
+import Toasts, { push, track } from "./components/Toasts";
 import type {
   AppInfo,
   AppSettings,
@@ -23,7 +23,7 @@ import {
   GetStatus,
   GetSubscriptions,
   GetAppInfo,
-  ImportLink,
+  ImportLinks,
   AddSubscription,
   UpdateSubscription,
   DeleteSubscription,
@@ -42,7 +42,7 @@ const emptyStatus: Status = {
 };
 
 const defaultSettings: AppSettings = {
-  core: "sing-box",
+  core: "auto",
   activeProfileId: "",
   dns: "1.1.1.1",
   dnsFallback: "8.8.8.8",
@@ -50,6 +50,20 @@ const defaultSettings: AppSettings = {
   stack: "mixed",
   mtu: 0,
   rules: [],
+  routingMode: "simple",
+  graph: { nodes: [], final: "proxy", layout: {} },
+  ipv6: false,
+  strictRoute: true,
+  sniff: true,
+  hwidEnabled: true,
+  hwid: "",
+  deviceOs: "",
+  osVersion: "",
+  deviceModel: "",
+  userAgent: "",
+  pingMethod: "get",
+  pingUrl: "http://cp.cloudflare.com/generate_204",
+  pingTimeout: 5000,
   autoConnect: false,
   launchAtStartup: false,
   minimizeToTray: false,
@@ -92,7 +106,7 @@ export default function App() {
       // Only surface errors — routine connect/disconnect is visible in the UI.
       if (s.state !== prev) {
         if (s.state === "error")
-          push(s.error ? `Ошибка: ${s.error}` : "Ошибка подключения", "error");
+          push("Не удалось подключиться", "error", { description: s.error || undefined });
         prev = s.state;
       }
     });
@@ -133,11 +147,12 @@ export default function App() {
 
   const handleImport = useCallback(
     async (raw: string) => {
-      const p = (await ImportLink(raw)) as Profile;
+      const added = ((await ImportLinks(raw)) as Profile[]) ?? [];
       await refreshProfiles();
+      if (added.length > 1) push(`Добавлено серверов: ${added.length}`, "ok");
       // First imported server becomes active automatically.
-      if (!settings.activeProfileId) {
-        const next = { ...settings, activeProfileId: p.id };
+      if (!settings.activeProfileId && added.length > 0) {
+        const next = { ...settings, activeProfileId: added[0].id };
         setSettings(next);
         await SaveSettings(next as any);
       }
@@ -170,11 +185,14 @@ export default function App() {
   const handleUpdateSub = useCallback(
     async (id: string) => {
       try {
-        const s = (await UpdateSubscription(id)) as Subscription;
+        await track(UpdateSubscription(id) as Promise<Subscription>, {
+          loading: "Обновляю подписку…",
+          success: (s) => `Подписка «${s.name}» обновлена: ${s.count} серв.`,
+          error: (e) => `Ошибка обновления: ${String(e)}`,
+        });
         await refreshProfiles();
-        push(`Подписка «${s.name}» обновлена: ${s.count} серв.`, "ok");
-      } catch (e) {
-        push(`Ошибка обновления: ${String(e)}`, "error");
+      } catch {
+        /* the toast already reported it */
       }
     },
     [refreshProfiles]
@@ -260,7 +278,9 @@ export default function App() {
               activeId={settings.activeProfileId}
               connected={connected}
               hideData={settings.demoMode}
+              core={settings.core}
               onActivate={handleActivate}
+              onChanged={refreshProfiles}
             />
           )}
           {view === "routing" && (
@@ -278,7 +298,7 @@ export default function App() {
               onChange={handleSettings}
             />
           )}
-        <Toasts />
+        <Toasts lifted={view === "routing" && settings.routingMode === "pro"} />
       </main>
       </div>
     </div>

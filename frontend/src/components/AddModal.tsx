@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { X, Loader2, Link2, Rss } from "lucide-react";
+import { X, Loader2, Link2, Rss, FileCode2 } from "lucide-react";
+import { plural } from "../format";
 
 interface Props {
   onClose: () => void;
@@ -8,8 +9,9 @@ interface Props {
 }
 
 // Kind of the pasted text, decided automatically from its content.
-type Kind = "link" | "sub" | "empty" | "unknown";
+type Kind = "link" | "config" | "sub" | "empty" | "unknown";
 
+// Mirrors link.Schemes on the Go side.
 const LINK_SCHEMES = [
   "vless://",
   "vmess://",
@@ -20,15 +22,42 @@ const LINK_SCHEMES = [
   "hysteria://",
   "hy://",
   "tuic://",
+  "wireguard://",
+  "wg://",
+  "anytls://",
+  "socks://",
+  "socks5://",
 ];
 
-// detectKind decides whether the input is a share link or a subscription URL.
-// Share-link schemes win; anything http(s) is treated as a subscription.
+const isLink = (line: string) => {
+  const t = line.trim().toLowerCase();
+  return LINK_SCHEMES.some((s) => t.startsWith(s));
+};
+
+// countLinks counts share links in pasted text — one per line.
+function countLinks(text: string): number {
+  return text.split(/\r?\n/).filter(isLink).length;
+}
+
+// looksLikeConfig spots a pasted sing-box config (JSON with outbounds), a
+// Clash / mihomo config (YAML with proxies) or a base64 subscription body.
+// The backend does the actual parsing; this only picks the hint and button.
+function looksLikeConfig(t: string): boolean {
+  if (t.startsWith("{") && /"(outbounds|endpoints)"/.test(t)) return true;
+  if (/^proxies:/m.test(t)) return true;
+  const compact = t.replace(/\s+/g, "");
+  return compact.length > 32 && /^[A-Za-z0-9+/=_-]+$/.test(compact);
+}
+
+// detectKind decides whether the input is share links, a pasted config or a
+// subscription URL. Share-link schemes win; http(s) is a subscription.
 function detectKind(text: string): Kind {
-  const t = text.trim().toLowerCase();
+  const t = text.trim();
+  const lower = t.toLowerCase();
   if (!t) return "empty";
-  if (LINK_SCHEMES.some((s) => t.startsWith(s))) return "link";
-  if (t.startsWith("http://") || t.startsWith("https://")) return "sub";
+  if (countLinks(text) > 0) return "link";
+  if (lower.startsWith("http://") || lower.startsWith("https://")) return "sub";
+  if (looksLikeConfig(t)) return "config";
   return "unknown";
 }
 
@@ -42,7 +71,8 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
   const [err, setErr] = useState("");
 
   const kind = useMemo(() => detectKind(text), [text]);
-  const canSubmit = kind === "link" || kind === "sub";
+  const links = useMemo(() => countLinks(text), [text]);
+  const canSubmit = kind === "link" || kind === "config" || kind === "sub";
 
   const submit = async () => {
     setErr("");
@@ -54,7 +84,7 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
     }
     setBusy(true);
     try {
-      if (kind === "link") {
+      if (kind === "link" || kind === "config") {
         await onImportLink(value);
       } else {
         await onAddSub(name.trim(), value);
@@ -89,7 +119,7 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Вставьте ссылку (vless://, vmess://, hysteria2://, …) или адрес подписки https://…"
+          placeholder="Вставьте ссылки (vless://, hysteria2://, wireguard://, … — по одной в строке) или адрес подписки https://…"
           rows={4}
           autoFocus
           className="w-full resize-none rounded-lg border border-border bg-bg px-3 py-2.5 font-mono text-xs text-text outline-none transition placeholder:text-text-faint focus:border-accent/60"
@@ -99,7 +129,16 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
         <div className="mt-2 h-4 text-xs">
           {kind === "link" && (
             <span className="inline-flex items-center gap-1.5 text-ok">
-              <Link2 size={12} /> Определено: ссылка на сервер
+              <Link2 size={12} />
+              {links === 1
+                ? "Определено: ссылка на сервер"
+                : `Определено: ${links} ${plural(links, "ссылка", "ссылки", "ссылок")}`}
+            </span>
+          )}
+          {kind === "config" && (
+            <span className="inline-flex items-center gap-1.5 text-ok">
+              <FileCode2 size={12} /> Определено: конфигурация (sing-box, Clash
+              или base64)
             </span>
           )}
           {kind === "sub" && (

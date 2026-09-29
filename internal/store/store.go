@@ -41,6 +41,17 @@ func New() (*Store, error) {
 	return s, nil
 }
 
+// NewMemory returns a store that keeps everything in memory, for when the
+// config directory cannot be used: the app still runs, it just forgets on
+// exit. Writes go to a throwaway temp directory.
+func NewMemory() *Store {
+	dir, err := os.MkdirTemp("", "TomorrowClient-")
+	if err != nil {
+		dir = os.TempDir()
+	}
+	return &Store{dir: dir, settings: model.DefaultSettings()}
+}
+
 // migrate applies one-time rewrites to settings loaded from an older file and
 // reports whether anything changed. Changing a default only affects fresh
 // installs — an existing settings.json keeps the old value forever — so a value
@@ -55,6 +66,12 @@ func (s *Store) migrate() bool {
 	// exactly once; the recorded version stops it happening again.
 	if s.settings.SettingsVersion < 1 && s.settings.Stack == "gvisor" {
 		s.settings.Stack = "mixed"
+	}
+
+	// v2: several cores, picked per profile by default. Before v2 sing-box was
+	// the only core, so a stored "sing-box" is the old default, not a choice.
+	if s.settings.SettingsVersion < 2 && (s.settings.Core == model.CoreSingBox || s.settings.Core == "") {
+		s.settings.Core = model.CoreAuto
 	}
 
 	s.settings.SettingsVersion = model.SettingsVersion

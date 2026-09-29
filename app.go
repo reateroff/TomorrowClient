@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"TomorrowClient/internal/cores"
+	"TomorrowClient/internal/device"
 	"TomorrowClient/internal/link"
 	"TomorrowClient/internal/model"
 	"TomorrowClient/internal/singbox"
@@ -21,7 +23,7 @@ import (
 )
 
 // Version is the client version shown on the About screen.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // App is the Wails-bound application object. Every exported method here is
 // callable from the React frontend.
@@ -31,6 +33,7 @@ type App struct {
 	engine    *vpn.Engine
 	mToggle   *systray.MenuItem // tray "connect/disconnect" item, relabeled on status
 	startedAt time.Time         // process start, reported as uptime in the dev tools
+	storeErr  error             // why the on-disk store could not open, if it could not
 
 	// Developer-tools status simulation. simStop cancels the goroutine that
 	// animates fake traffic counters; nil when no simulation is running.
@@ -43,9 +46,9 @@ type AppInfo struct {
 	Version   string `json:"version"`
 	Copyright string `json:"copyright"`
 	BuiltWith string `json:"builtWith"`
-	// License is stated in the UI because the app links sing-box, which is
-	// GPL-3.0-or-later: the terms have to reach the person running it, not
-	// just whoever reads the repository.
+	// License is stated in the UI because the app links sing-box, TodayCore
+	// and mihomo, which are GPL-3.0-or-later: the terms have to reach the
+	// person running it, not just whoever reads the repository.
 	License string `json:"license"`
 }
 
@@ -54,37 +57,54 @@ func (a *App) GetAppInfo() AppInfo {
 	return AppInfo{
 		Version:   Version,
 		Copyright: fmt.Sprintf("© %d TomorrowClient", time.Now().Year()),
-		BuiltWith: "Wails · Go · React · sing-box",
+		BuiltWith: "Wails · Go · React · sing-box · TodayCore · Xray · mihomo",
 		License:   "AGPL-3.0-or-later",
 	}
 }
 
-// NewApp creates a new App application struct.
+// NewApp creates the application with its store and engine already in place.
+//
+// They are built here rather than in startup because the frontend can call
+// bound methods before startup has run — in dev mode a rebuilt app gets calls
+// from the already-open page immediately — and every method relies on them.
 func NewApp() *App {
-	return &App{}
+	a := &App{startedAt: time.Now()}
+	sub.DefaultUserAgent = "TomorrowClient/" + Version
+	st, err := store.New()
+	if err != nil {
+		a.storeErr = err
+		st = store.NewMemory()
+	}
+	a.store = st
+	// Downloaded rule-sets and the core's other caches live with the data.
+	singbox.CacheDir = st.Dir()
+
+	// The engine pushes status snapshots to the frontend over the
+	// "vpn:status" event, and each core log line over "vpn:log". The status
+	// callback also relabels the tray connect/disconnect item. Events need the
+	// Wails context, which only exists once startup has run.
+	a.engine = vpn.New(
+		func(s model.Status) {
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "vpn:status", s)
+			}
+			a.updateTrayStatus(s)
+		},
+		func(line string) {
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "vpn:log", line)
+			}
+		},
+	)
+	return a
 }
 
 // startup is called by Wails when the app starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.startedAt = time.Now()
-
-	st, err := store.New()
-	if err != nil {
-		runtime.LogError(ctx, "store init: "+err.Error())
+	if a.storeErr != nil {
+		runtime.LogError(ctx, "store init (settings will not be saved): "+a.storeErr.Error())
 	}
-	a.store = st
-
-	// The engine pushes status snapshots to the frontend over the
-	// "vpn:status" event, and each core log line over "vpn:log". The status
-	// callback also relabels the tray connect/disconnect item.
-	a.engine = vpn.New(
-		func(s model.Status) {
-			runtime.EventsEmit(ctx, "vpn:status", s)
-			a.updateTrayStatus(s)
-		},
-		func(line string) { runtime.EventsEmit(ctx, "vpn:log", line) },
-	)
 
 	a.setupTray()
 
@@ -112,21 +132,51 @@ func (a *App) GetProfiles() []model.Profile {
 	return a.store.Profiles()
 }
 
-// ImportLink parses a share link, saves it as a new profile, and returns it.
-func (a *App) ImportLink(raw string) (model.Profile, error) {
-	p, err := link.Parse(raw)
+// ImportLinks imports every server in the pasted text: one share link,
+// several one per line, a base64 subscription body, or a whole sing-box /
+// Clash config. Entries that fail to parse are skipped; it is an error only
+// when nothing could be imported.
+func (a *App) ImportLinks(text string) ([]model.Profile, error) {
+	profiles, err := sub.Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range profiles {
+		if err := a.store.UpsertProfile(p); err != nil {
+			return nil, err
+		}
+	}
+	return profiles, nil
+}
+
+// SaveProfile inserts or updates a profile edited in the form. A profile that
+// came from a link gets its link rebuilt from the edited fields, so copying it
+// hands out what the app actually runs.
+func (a *App) SaveProfile(p model.Profile) error {
+	if !strings.HasPrefix(strings.TrimSpace(p.Raw), "{") {
+		if l := link.Encode(p); l != "" {
+			p.Raw = l
+		}
+	}
+	return a.store.UpsertProfile(p)
+}
+
+// SaveProfileJSON replaces a JSON-imported profile with an edited version of
+// its entry, keeping its identity and subscription.
+func (a *App) SaveProfileJSON(id, text string) (model.Profile, error) {
+	old, ok := a.store.Profile(id)
+	if !ok {
+		return model.Profile{}, fmt.Errorf("профиль не найден")
+	}
+	p, err := sub.ParseEntry(text)
 	if err != nil {
 		return model.Profile{}, err
 	}
+	p.ID, p.SubID = old.ID, old.SubID
 	if err := a.store.UpsertProfile(p); err != nil {
 		return model.Profile{}, err
 	}
 	return p, nil
-}
-
-// SaveProfile inserts or updates a profile.
-func (a *App) SaveProfile(p model.Profile) error {
-	return a.store.UpsertProfile(p)
 }
 
 // DeleteProfile removes a profile by id.
@@ -136,72 +186,126 @@ func (a *App) DeleteProfile(id string) error {
 
 // PingResult is one server's latency cell.
 type PingResult struct {
-	// LatencyMs is the ICMP round trip, or -1 when the host does not answer
-	// echo requests. Plenty of servers filter ICMP while working perfectly, so
-	// -1 on its own is not a failure — read it together with OK.
+	// LatencyMs is the measured delay by the configured method, -1 on failure.
 	LatencyMs int `json:"latencyMs"`
-	// OK reports whether a real request actually made it through the server.
+	// OK reports whether the check succeeded.
 	OK bool `json:"ok"`
 }
 
-// PingLatency measures only the ICMP round trip to a profile's server.
-//
-// The main screen refreshes this on a short timer, so it has to stay cheap: a
-// few 32-byte echo packets and nothing else. PingProfile additionally stands up
-// a private core and pushes a real request through the server, which is the
-// right thing when judging servers you are not connected to, and pure waste for
-// the one already carrying your traffic — if it were broken there would be no
-// connection to report on.
-func (a *App) PingLatency(id string) int {
-	p, ok := a.store.Profile(id)
-	if !ok || p.Address == "" {
-		return -1
-	}
-	d, err := vpn.PingICMP(p.Address)
-	if err != nil {
-		return -1
-	}
-	return int(d.Milliseconds())
+// GetCores lists the linked cores with their versions.
+func (a *App) GetCores() []cores.Info {
+	return cores.List()
 }
 
-// PingProfile reports a profile's network latency and whether it works at all.
+// CoreSupport says whether one core can run a profile, and why not.
+type CoreSupport struct {
+	Core      model.Core `json:"core"`
+	Supported bool       `json:"supported"`
+	Reason    string     `json:"reason,omitempty"`
+}
+
+// ProfileCores reports, for a profile, the core the current setting picks and
+// how every core stands with it.
+type ProfileCores struct {
+	Selected model.Core    `json:"selected"`
+	Error    string        `json:"error,omitempty"`
+	Cores    []CoreSupport `json:"cores"`
+}
+
+// GetProfileCores tells the UI which core would run a profile and which of the
+// others could.
+func (a *App) GetProfileCores(id string) ProfileCores {
+	p, ok := a.store.Profile(id)
+	if !ok {
+		return ProfileCores{Error: "профиль не найден"}
+	}
+	var out ProfileCores
+	c, err := cores.Resolve(a.store.Settings().Core, p)
+	out.Selected = c
+	if err != nil {
+		out.Error = err.Error()
+	}
+	for _, core := range cores.All {
+		cs := CoreSupport{Core: core, Supported: true}
+		if err := cores.Supports(core, p); err != nil {
+			cs.Supported, cs.Reason = false, err.Error()
+		}
+		out.Cores = append(out.Cores, cs)
+	}
+	return out
+}
+
+// GetCoreIssues maps each profile the configured core cannot run to the
+// reason. Empty under auto unless no core at all fits a profile.
+func (a *App) GetCoreIssues() map[string]string {
+	setting := a.store.Settings().Core
+	out := map[string]string{}
+	for _, p := range a.store.Profiles() {
+		if _, err := cores.Resolve(setting, p); err != nil {
+			out[p.ID] = err.Error()
+		}
+	}
+	return out
+}
+
+// PingLatency is the live figure on the main screen, refreshed on a timer:
+// the latency alone, -1 when the check fails.
+func (a *App) PingLatency(id string) int {
+	return a.PingProfile(id).LatencyMs
+}
+
+// PingProfile checks a profile the way the settings say:
 //
-// The two are measured separately on purpose. ICMP gives the honest round trip,
-// which is what a latency figure should say; timing a request through the proxy
-// instead would fold in TCP setup, the TLS handshake and the far-side fetch, and
-// read several hundred milliseconds on a link that is really a few tens. But
-// ICMP says nothing about whether the profile is usable, so a real request
-// through the server decides that separately — it only completes when the
-// transport, TLS and credentials are all good.
+//   - icmp: echo to the server — the bare network round trip;
+//   - tcp: a handshake with the server's port — proves something listens;
+//   - get / head: a real request through the proxy on the core that would
+//     carry it — slower, but the only check that proves the transport, TLS and
+//     credentials all work.
+//
+// ICMP and TCP leave through the physical adapter, so a running tunnel neither
+// answers for the server nor carries the check.
 func (a *App) PingProfile(id string) PingResult {
 	p, ok := a.store.Profile(id)
-	if !ok || p.Address == "" || p.Port == 0 {
+	if !ok || p.Address == "" {
 		return PingResult{LatencyMs: -1}
+	}
+	s := a.store.Settings()
+	timeout := time.Duration(s.PingTimeout) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 5 * time.Second
 	}
 
 	var (
-		wg      sync.WaitGroup
-		latency = -1
-		works   bool
+		d   time.Duration
+		err error
 	)
-	wg.Add(2)
-
-	// Run both together: a server that filters ICMP would otherwise hold up the
-	// verdict for the full echo timeout before the real check even started.
-	go func() {
-		defer wg.Done()
-		if d, err := vpn.PingICMP(p.Address); err == nil {
-			latency = int(d.Milliseconds())
+	switch s.PingMethod {
+	case model.PingICMP:
+		d, err = vpn.PingICMP(p.Address)
+	case model.PingTCP:
+		if p.Port == 0 {
+			return PingResult{LatencyMs: -1}
 		}
-	}()
-	go func() {
-		defer wg.Done()
-		_, err := vpn.ProbeLatency(p)
-		works = err == nil
-	}()
-
-	wg.Wait()
-	return PingResult{LatencyMs: latency, OK: works}
+		d, err = vpn.PingTCP(p.Address, p.Port, timeout)
+	default:
+		core, rerr := cores.Resolve(s.Core, p)
+		if rerr != nil {
+			return PingResult{LatencyMs: -1}
+		}
+		method := "GET"
+		if s.PingMethod == model.PingHEAD {
+			method = "HEAD"
+		}
+		d, err = vpn.ProbeLatency(p, core, vpn.ProbeOptions{Method: method, URL: s.PingURL, Timeout: timeout})
+	}
+	if err != nil {
+		return PingResult{LatencyMs: -1}
+	}
+	ms := int(d.Milliseconds())
+	if ms < 1 {
+		ms = 1
+	}
+	return PingResult{LatencyMs: ms, OK: true}
 }
 
 // --- Subscriptions ---
@@ -225,7 +329,7 @@ func (a *App) AddSubscription(name, url string) (model.Subscription, error) {
 		URL:  url,
 	}
 
-	profiles, info, err := sub.Fetch(url, s.ID)
+	profiles, info, err := sub.Fetch(url, s.ID, a.SubscriptionHeaders())
 	if err != nil {
 		return model.Subscription{}, err
 	}
@@ -257,7 +361,7 @@ func (a *App) UpdateSubscription(id string) (model.Subscription, error) {
 	if !ok {
 		return model.Subscription{}, fmt.Errorf("subscription not found")
 	}
-	profiles, info, err := sub.Fetch(s.URL, s.ID)
+	profiles, info, err := sub.Fetch(s.URL, s.ID, a.SubscriptionHeaders())
 	if err != nil {
 		return model.Subscription{}, err
 	}
@@ -306,6 +410,35 @@ func subNameFromURL(raw string) string {
 	return s
 }
 
+// --- Device (HWID) ---
+
+// GetDeviceInfo returns what the machine really is — the values used wherever
+// the settings leave a field empty.
+func (a *App) GetDeviceInfo() device.Info {
+	return device.Detect(sub.DefaultUserAgent)
+}
+
+// SubscriptionHeaders is what goes out with every subscription request under
+// the current settings. Exposed so the settings page can show it.
+func (a *App) SubscriptionHeaders() map[string]string {
+	s := a.store.Settings()
+	real := device.Detect(sub.DefaultUserAgent)
+	pick := func(set, auto string) string {
+		if strings.TrimSpace(set) != "" {
+			return strings.TrimSpace(set)
+		}
+		return auto
+	}
+	h := map[string]string{"User-Agent": pick(s.UserAgent, real.UserAgent)}
+	if s.HWIDEnabled {
+		h["x-hwid"] = pick(s.HWID, real.HWID)
+		h["x-device-os"] = pick(s.DeviceOS, real.OS)
+		h["x-ver-os"] = pick(s.OSVersion, real.OSVersion)
+		h["x-device-model"] = pick(s.DeviceModel, real.Model)
+	}
+	return h
+}
+
 // --- Settings ---
 
 // GetSettings returns the persisted settings.
@@ -336,9 +469,9 @@ func (a *App) ClearLogs() {
 	a.engine.ClearLogs()
 }
 
-// PreviewConfig builds and returns the core config JSON for the active profile
-// and current settings. Used by the developer tools to inspect what the app
-// actually hands to the running core.
+// PreviewConfig renders the config the active profile would run with under the
+// current settings, for the developer tools. For Xray and mihomo that is the
+// core's config followed by the sing-box front's.
 func (a *App) PreviewConfig() (string, error) {
 	s := a.store.Settings()
 	if s.ActiveProfileID == "" {
@@ -348,11 +481,11 @@ func (a *App) PreviewConfig() (string, error) {
 	if !ok {
 		return "", fmt.Errorf("профиль не найден")
 	}
-	b, err := singbox.Build(p, s)
+	c, err := cores.Resolve(s.Core, p)
 	if err != nil {
 		return "", err
 	}
-	return string(b), nil
+	return vpn.Preview(c, p, s)
 }
 
 // --- Connection ---

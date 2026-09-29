@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   Zap,
@@ -6,12 +6,15 @@ import {
   Server,
   Activity,
   Loader2,
+  AlertTriangle,
+  FileCode2,
 } from "lucide-react";
+import ProfileEditor from "./ProfileEditor";
 import type { Profile, Subscription } from "../types";
 import { describeChain } from "../proto";
 import { plural, HIDDEN, latencyTone } from "../format";
 import { stripCountryPrefix } from "../flags";
-import { PingProfile } from "../../wailsjs/go/main/App";
+import { GetCoreIssues, PingProfile } from "../../wailsjs/go/main/App";
 import type { main } from "../../wailsjs/go/models";
 import FlagChip from "./FlagChip";
 
@@ -22,7 +25,9 @@ interface Props {
   activeId: string;
   connected: boolean;
   hideData: boolean; // demo mode: mask server addresses
+  core: string; // the core setting; servers it cannot run are flagged
   onActivate: (id: string) => void;
+  onChanged: () => void; // a server was edited
 }
 
 // Ping result per profile id; undefined means "not tested yet".
@@ -37,10 +42,20 @@ export default function ConfigsView({
   activeId,
   connected,
   hideData,
+  core,
   onActivate,
+  onChanged,
 }: Props) {
+  // The server whose configuration is open.
+  const [editing, setEditing] = useState<Profile | null>(null);
   const [pings, setPings] = useState<PingMap>({});
   const [pinging, setPinging] = useState(false);
+  // Servers the chosen core cannot run, with the reason.
+  const [issues, setIssues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    GetCoreIssues().then((m) => setIssues(m ?? {}));
+  }, [profiles, core]);
 
   const manual = profiles.filter((p) => !p.subId);
   const bySub = (id: string) => profiles.filter((p) => p.subId === id);
@@ -116,7 +131,7 @@ export default function ConfigsView({
           <button
             onClick={pingAll}
             disabled={pinging}
-            title="Отправляет реальный запрос через каждый сервер — измеряет то, что действительно работает, а не просто открытый порт"
+            title="Проверяет каждый сервер методом из «Настройки → Проверка серверов»"
             className="no-drag flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-muted transition hover:bg-surface-2 hover:text-text disabled:opacity-50"
           >
             {pinging ? (
@@ -160,11 +175,21 @@ export default function ConfigsView({
               hideData={hideData}
               ping={pings[p.id]}
               pending={pinging && pings[p.id] === undefined}
+              issue={issues[p.id]}
               onActivate={onActivate}
+              onEdit={() => setEditing(p)}
             />
           ))}
           </div>
         </div>
+      )}
+      {editing && (
+        <ProfileEditor
+          profile={editing}
+          hideData={hideData}
+          onClose={() => setEditing(null)}
+          onSaved={onChanged}
+        />
       )}
     </div>
   );
@@ -179,7 +204,9 @@ function LocationRow({
   hideData,
   ping,
   pending,
+  issue,
   onActivate,
+  onEdit,
 }: {
   profile: Profile;
   active: boolean;
@@ -187,7 +214,9 @@ function LocationRow({
   hideData: boolean;
   ping?: main.PingResult;
   pending: boolean;
+  issue?: string;
   onActivate: (id: string) => void;
+  onEdit: () => void;
 }) {
   return (
     <div
@@ -199,6 +228,7 @@ function LocationRow({
     >
       <button
         onClick={() => onActivate(p.id)}
+        onDoubleClick={onEdit}
         className="no-drag flex min-w-0 flex-1 items-center gap-3 text-left"
       >
         {/* Flag chip */}
@@ -221,6 +251,22 @@ function LocationRow({
         </div>
       </button>
 
+      <button
+        onClick={onEdit}
+        title="Конфигурация сервера"
+        className="no-drag shrink-0 rounded-md p-1.5 text-text-faint opacity-0 transition hover:bg-surface hover:text-text group-hover:opacity-100"
+      >
+        <FileCode2 size={15} />
+      </button>
+
+      {/* A pinned core that cannot run this server says so up front, rather
+          than letting the user find out on Connect. */}
+      {issue && (
+        <span title={issue} className="shrink-0 text-amber">
+          <AlertTriangle size={14} />
+        </span>
+      )}
+
       {/* A probe takes real time now, and the backend runs only a few at once,
           so rows waiting their turn say so instead of looking untested. */}
       {pending ? (
@@ -239,14 +285,12 @@ function LocationRow({
   );
 }
 
-// PingBadge shows the ICMP round trip, or n/a when the profile itself does not
-// work. The two states are distinct on purpose: a server can answer ICMP and
-// still be unusable, and it can work perfectly while filtering ICMP.
+// PingBadge shows the measured delay, or n/a when the check failed.
 function PingBadge({ result }: { result: main.PingResult }) {
   if (!result.ok) {
     return (
       <span
-        title="Через этот сервер не проходит запрос — профиль не работает"
+        title="Проверка не прошла: сервер не ответил за отведённое время"
         className="shrink-0 rounded-md bg-danger/15 px-2 py-1 font-mono text-[10px] text-danger"
       >
         n/a

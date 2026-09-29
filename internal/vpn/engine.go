@@ -1,7 +1,7 @@
 //go:build windows
 
-// Package vpn is the connection engine. It owns the active core subprocess,
-// tracks the connection state, and pushes live status snapshots to the UI.
+// Package vpn is the connection engine. It owns the running cores, tracks the
+// connection state, and pushes live status snapshots to the UI.
 package vpn
 
 import (
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"TomorrowClient/internal/cores"
 	"TomorrowClient/internal/model"
 )
 
@@ -34,7 +35,7 @@ type Engine struct {
 	lastTx   uint64
 	lastTick time.Time
 
-	sb   *sbRunner
+	run  runner
 	emit Emitter
 	logs *LogSink
 
@@ -88,7 +89,8 @@ func (e *Engine) setState(st model.ConnState, errMsg string) {
 	e.push()
 }
 
-// Connect brings the tunnel up for the given profile using the selected core.
+// Connect brings the tunnel up for the given profile. The configured core may
+// be auto, in which case the profile decides which core runs it.
 func (e *Engine) Connect(p model.Profile, s model.AppSettings) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -97,20 +99,27 @@ func (e *Engine) Connect(p model.Profile, s model.AppSettings) error {
 		return nil
 	}
 
-	e.core = s.Core
+	core, err := cores.Resolve(s.Core, p)
+	e.core = core
 	e.profile = &p
 	e.stats = model.Stats{}
 	e.baseRx, e.baseTx = 0, 0
+	if err != nil {
+		e.setState(model.StateError, err.Error())
+		return err
+	}
 	// Unify the TUN adapter name across the route setup and the stats matcher.
-	activeTunName = s.TunInterfaceName()
+	activeTunName.Store(s.TunInterfaceName())
 	e.setState(model.StateConnecting, "")
+	e.logs.append("INFO ядро: " + cores.Name(core))
 
-	e.sb = &sbRunner{logs: e.logs}
-	if err := e.sb.start(p, s); err != nil {
+	run, err := startCore(core, p, s, e.logs)
+	if err != nil {
 		e.teardownLocked()
 		e.setState(model.StateError, err.Error())
 		return err
 	}
+	e.run = run
 
 	e.connAt = time.Now().UnixMilli()
 	e.lastTick = time.Now()
@@ -138,9 +147,9 @@ func (e *Engine) teardownLocked() {
 		e.statsCancel()
 		e.statsCancel = nil
 	}
-	if e.sb != nil {
-		e.sb.stop()
-		e.sb = nil
+	if e.run != nil {
+		e.run.stop()
+		e.run = nil
 	}
 }
 

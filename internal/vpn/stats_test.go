@@ -59,9 +59,9 @@ func TestAdapterBytesFindsRealAdapter(t *testing.T) {
 		t.Skip("no adapter with traffic on this machine")
 	}
 
-	saved := activeTunName
-	defer func() { activeTunName = saved }()
-	activeTunName = target
+	saved := activeTunName.Load()
+	defer activeTunName.Store(saved)
+	activeTunName.Store(target)
 
 	rx, tx, ok := adapterBytes()
 	if !ok {

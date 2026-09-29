@@ -126,3 +126,35 @@ func TestResetAllClearsEverything(t *testing.T) {
 		t.Error("profiles.json serialised as null")
 	}
 }
+
+// v2 moves the stored "sing-box" — the only core there was — to auto, once.
+// A v1 file is the realistic input: it carries a version and still migrates.
+func TestMigrateCoreToAuto(t *testing.T) {
+	dir := t.TempDir()
+	v1 := `{"settingsVersion":1,"core":"sing-box","stack":"gvisor"}`
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(v1), 0o644); err != nil {
+		t.Fatalf("seed settings.json: %v", err)
+	}
+
+	s := &Store{dir: dir, settings: model.DefaultSettings()}
+	s.load()
+	if !s.migrate() {
+		t.Fatal("migrate reported no change for a v1 file")
+	}
+	if got := s.Settings().Core; got != model.CoreAuto {
+		t.Errorf("core = %q, want %q", got, model.CoreAuto)
+	}
+	// The v1 stack migration already ran for this file; gvisor is a choice now.
+	if got := s.Settings().Stack; got != "gvisor" {
+		t.Errorf("v1 migration re-ran: stack = %q", got)
+	}
+
+	// A sing-box picked after the migration is deliberate and must stick.
+	s.settings.Core = model.CoreSingBox
+	if s.migrate() {
+		t.Error("migrate ran a second time")
+	}
+	if got := s.Settings().Core; got != model.CoreSingBox {
+		t.Errorf("migrate overwrote a deliberate choice: core = %q", got)
+	}
+}

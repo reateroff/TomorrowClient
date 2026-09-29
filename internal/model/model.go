@@ -2,13 +2,28 @@
 // React frontend (they are exported through the Wails bindings).
 package model
 
-// Core names the proxy engine handling the traffic. sing-box is the only one:
-// it is linked into the app and runs in-process with a native TUN inbound and
-// auto_route, managing the system routing table itself. The type is kept so the
-// UI and status snapshots can still report which core is running.
+// Core names the proxy engine handling the traffic. Every core is linked into
+// the app and runs in-process; there are no core executables to ship.
+//
+//   - sing-box runs the whole tunnel itself: TUN inbound with auto_route, DNS,
+//     routing and the proxy outbound in one instance.
+//   - TodayCore is sing-box with client features ported from Xray (XHTTP, VLESS
+//     Encryption, current REALITY). It runs the tunnel the same way.
+//   - Xray and mihomo only speak the proxy protocol. A sing-box instance owns
+//     the TUN adapter, DNS and routing in front of them and hands proxied
+//     traffic to the core over a loopback SOCKS link.
+//
+// CoreAuto is a setting, never a running core: it picks one of the above per
+// profile (see internal/cores).
 type Core string
 
-const CoreSingBox Core = "sing-box"
+const (
+	CoreAuto      Core = "auto"
+	CoreSingBox   Core = "sing-box"
+	CoreTodayCore Core = "todaycore"
+	CoreXray      Core = "xray"
+	CoreMihomo    Core = "mihomo"
+)
 
 // ConnState is the high level connection state reported to the UI.
 type ConnState string
@@ -31,6 +46,10 @@ const (
 	ProtoHysteria    Protocol = "hysteria"  // Hysteria v1 (QUIC)
 	ProtoHysteria2   Protocol = "hysteria2" // Hysteria2 (QUIC)
 	ProtoTUIC        Protocol = "tuic"      // TUIC v5 (QUIC)
+	ProtoWireGuard   Protocol = "wireguard"
+	ProtoAnyTLS      Protocol = "anytls"
+	ProtoSOCKS       Protocol = "socks"
+	ProtoHTTP        Protocol = "http"
 )
 
 // Profile describes a single server / outbound. Fields are a superset that
@@ -43,23 +62,44 @@ type Profile struct {
 	Port     int      `json:"port"`
 
 	// Auth / identity
-	UUID     string `json:"uuid,omitempty"`     // vless / vmess
-	Password string `json:"password,omitempty"` // trojan / shadowsocks
-	Method   string `json:"method,omitempty"`   // shadowsocks cipher
+	UUID     string `json:"uuid,omitempty"`     // vless / vmess / tuic
+	Username string `json:"username,omitempty"` // socks / http
+	Password string `json:"password,omitempty"` // trojan / shadowsocks / hysteria / tuic / anytls / socks / http
+	Method   string `json:"method,omitempty"`   // shadowsocks cipher, vmess security
 	AlterID  int    `json:"alterId,omitempty"`  // vmess
 
+	// Encryption is VLESS Encryption ("mlkem768x25519plus.…"); empty or "none"
+	// is plain VLESS.
+	Encryption string `json:"encryption,omitempty"`
+	// PacketEncoding is the VLESS/VMess UDP encapsulation ("xudp" /
+	// "packetaddr"); empty means the core default.
+	PacketEncoding string `json:"packetEncoding,omitempty"`
+
 	// Transport
-	Network     string `json:"network,omitempty"`     // tcp / ws / grpc / http
-	Security    string `json:"security,omitempty"`    // none / tls / reality
-	SNI         string `json:"sni,omitempty"`         // tls server name
-	ALPN        string `json:"alpn,omitempty"`        // comma separated
-	Fingerprint string `json:"fingerprint,omitempty"` // utls fingerprint
-	Flow        string `json:"flow,omitempty"`        // vless flow (xtls-rprx-vision)
-	PublicKey   string `json:"publicKey,omitempty"`   // reality
-	ShortID     string `json:"shortId,omitempty"`     // reality
-	Path        string `json:"path,omitempty"`        // ws/http path
-	Host        string `json:"host,omitempty"`        // ws/http host header
-	ServiceName string `json:"serviceName,omitempty"` // grpc
+	Network       string `json:"network,omitempty"`       // tcp / ws / grpc / http / httpupgrade / xhttp / kcp / quic
+	Security      string `json:"security,omitempty"`      // none / tls / reality
+	SNI           string `json:"sni,omitempty"`           // tls server name
+	ALPN          string `json:"alpn,omitempty"`          // comma separated
+	Fingerprint   string `json:"fingerprint,omitempty"`   // utls fingerprint
+	AllowInsecure bool   `json:"allowInsecure,omitempty"` // skip certificate verification
+	Flow          string `json:"flow,omitempty"`          // vless flow (xtls-rprx-vision)
+	PublicKey     string `json:"publicKey,omitempty"`     // reality public key / wireguard peer key
+	ShortID       string `json:"shortId,omitempty"`       // reality
+	SpiderX       string `json:"spiderX,omitempty"`       // reality
+	Path          string `json:"path,omitempty"`          // ws/http/httpupgrade/xhttp path
+	Host          string `json:"host,omitempty"`          // ws/http/httpupgrade/xhttp host header
+	ServiceName   string `json:"serviceName,omitempty"`   // grpc
+	HeaderType    string `json:"headerType,omitempty"`    // tcp "http" obfuscation / kcp header
+	Seed          string `json:"seed,omitempty"`          // kcp seed
+
+	// XHTTP (SplitHTTP)
+	Mode  string `json:"mode,omitempty"`  // auto / packet-up / stream-up / stream-one
+	Extra string `json:"extra,omitempty"` // Xray "extra" JSON object, as found in share links
+
+	// Shadowsocks SIP003 plugin ("obfs-local" / "v2ray-plugin" / ...) and its
+	// options string, as in the share link.
+	Plugin     string `json:"plugin,omitempty"`
+	PluginOpts string `json:"pluginOpts,omitempty"`
 
 	// QUIC-based protocols (hysteria / hysteria2 / tuic)
 	Obfs         string `json:"obfs,omitempty"`         // hysteria2 salamander / hysteria obfs
@@ -68,6 +108,15 @@ type Profile struct {
 	DownMbps     int    `json:"downMbps,omitempty"`     // hysteria down bandwidth
 	Congestion   string `json:"congestion,omitempty"`   // tuic congestion control (bbr/cubic/new_reno)
 	UDPRelayMode string `json:"udpRelayMode,omitempty"` // tuic udp relay mode (native/quic)
+	// Ports is a Hysteria2 port-hopping range ("20000-30000" or "443,8443").
+	Ports string `json:"ports,omitempty"`
+
+	// WireGuard
+	PrivateKey   string `json:"privateKey,omitempty"`
+	PreSharedKey string `json:"preSharedKey,omitempty"`
+	LocalAddress string `json:"localAddress,omitempty"` // interface addresses, comma separated CIDRs
+	Reserved     string `json:"reserved,omitempty"`     // "1,2,3"
+	MTU          int    `json:"mtu,omitempty"`
 
 	// The original share link, kept so we can re-export / debug.
 	Raw string `json:"raw,omitempty"`
@@ -108,10 +157,77 @@ type RoutingRule struct {
 	Icon   string `json:"icon"`   // process rules only: PNG data URL of the app icon
 }
 
+// Routing modes. Simple is the flat rule list; Pro is the node graph the user
+// wires up by hand.
+const (
+	RoutingSimple = "simple"
+	RoutingPro    = "pro"
+)
+
+// Latency check methods.
+const (
+	PingICMP = "icmp"
+	PingTCP  = "tcp"
+	PingGET  = "get"
+	PingHEAD = "head"
+)
+
+// DefaultPingURL answers 204 with no body, so a check times the round trip
+// rather than a download.
+const DefaultPingURL = "http://cp.cloudflare.com/generate_204"
+
+// Route actions a node or the catch-all can send traffic to.
+const (
+	ActionProxy  = "proxy"
+	ActionDirect = "direct"
+	ActionBlock  = "block"
+)
+
+// RouteNode is one matcher node of the Pro routing graph: a list of values of
+// one kind, wired to one action. Nodes are evaluated in slice order — the
+// first node whose values match decides — so the order is the priority.
+type RouteNode struct {
+	ID string `json:"id"`
+	// Type is the matcher kind:
+	//   domain (suffix), domain_full, domain_keyword, domain_regex,
+	//   ip (CIDR), port (443 or 1000-2000), process (exe name),
+	//   process_path, network (tcp/udp), protocol (sniffed: tls, http, quic,
+	//   bittorrent, …), geosite and geoip (sing-box rule-set names).
+	Type   string   `json:"type"`
+	Name   string   `json:"name"`   // optional title; the type's name when empty
+	Values []string `json:"values"` // matched if any value matches
+	// Icons holds app icons (PNG data URLs) for process values, by value.
+	Icons map[string]string `json:"icons,omitempty"`
+	// Action is where matching traffic goes; empty leaves the node unwired,
+	// which disables it without losing its values.
+	Action string `json:"action"`
+	// X, Y place the node on the canvas.
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// Point is a canvas position.
+type Point struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// RouteGraph is the Pro routing setup.
+type RouteGraph struct {
+	Nodes []RouteNode `json:"nodes"`
+	// Final is the action for traffic no node matched ("Остальное"); empty
+	// when unwired, which routes it through the proxy.
+	Final string `json:"final"`
+	// Layout places the catch-all ("final") and the action nodes the user
+	// added ("proxy", "direct", "block"); an action without an entry is not
+	// on the canvas.
+	Layout map[string]Point `json:"layout"`
+}
+
 // SettingsVersion is bumped whenever a stored setting needs a one-time rewrite
 // on load. See Store.migrate: recording the version is what keeps a migration
 // from running twice and overwriting a later deliberate choice.
-const SettingsVersion = 1
+const SettingsVersion = 2
 
 // AppSettings is the persisted user configuration.
 type AppSettings struct {
@@ -121,6 +237,7 @@ type AppSettings struct {
 	SettingsVersion int `json:"settingsVersion"`
 
 	// --- Connection ---
+	// Core is the engine to run, or CoreAuto to pick one per profile.
 	Core            Core   `json:"core"`
 	ActiveProfileID string `json:"activeProfileId"`
 	// DNS is the primary resolver, queried through the tunnel.
@@ -129,7 +246,7 @@ type AppSettings struct {
 	// (LAN, direct rules). sing-box has no automatic failover between
 	// resolvers, so this is a second resolver rather than a stand-in.
 	DNSFallback string `json:"dnsFallback"`
-	// TunName is the name of the WinTun adapter both cores create. Empty means
+	// TunName is the name of the WinTun adapter the tunnel creates. Empty means
 	// the built-in default ("TomorrowTun").
 	TunName string `json:"tunName"`
 	// Stack is the sing-box TUN network stack: "mixed" (default), "gvisor" or
@@ -137,8 +254,47 @@ type AppSettings struct {
 	Stack string `json:"stack"`
 	// MTU of the TUN interface; 0 means the core default (usually 9000/1500).
 	MTU int `json:"mtu"`
-	// Rules are user-defined domain/ip/app routing overrides.
+	// Rules are user-defined domain/ip/app routing overrides (simple mode).
 	Rules []RoutingRule `json:"rules"`
+	// RoutingMode is RoutingSimple (Rules) or RoutingPro (Graph).
+	RoutingMode string `json:"routingMode"`
+	// Graph is the Pro routing graph.
+	Graph RouteGraph `json:"graph"`
+
+	// --- Tunnel (advanced) ---
+	// IPv6 gives the TUN adapter an IPv6 address and resolves AAAA records, so
+	// IPv6 traffic is tunnelled instead of left to leak around it.
+	IPv6 bool `json:"ipv6"`
+	// StrictRoute makes the tunnel refuse traffic that tries to leave around
+	// it (DNS leaks included). On by default.
+	StrictRoute bool `json:"strictRoute"`
+	// Sniff reads the domain out of TLS/HTTP/QUIC so domain rules match
+	// connections that arrive as bare IPs. On by default.
+	Sniff bool `json:"sniff"`
+
+	// --- Server checks ---
+	// PingMethod is how latency is measured: PingICMP / PingTCP (reach the
+	// server itself) or PingGET / PingHEAD (a real request through the proxy,
+	// which also proves the server works).
+	PingMethod string `json:"pingMethod"`
+	// PingURL is fetched through the proxy by the GET and HEAD methods.
+	PingURL string `json:"pingUrl"`
+	// PingTimeout bounds one check, in milliseconds.
+	PingTimeout int `json:"pingTimeout"`
+
+	// --- Device (HWID) ---
+	// HWIDEnabled sends the device headers (x-hwid, x-device-os, x-ver-os,
+	// x-device-model) with subscription requests; panels that limit devices
+	// per subscription need them. On by default.
+	HWIDEnabled bool `json:"hwidEnabled"`
+	// The values below override what is detected; empty means the real one.
+	HWID        string `json:"hwid"`
+	DeviceOS    string `json:"deviceOs"`
+	OSVersion   string `json:"osVersion"`
+	DeviceModel string `json:"deviceModel"`
+	// UserAgent overrides the subscription User-Agent, which panels also use
+	// to pick the format they answer with. Sent whether or not HWID is on.
+	UserAgent string `json:"userAgent"`
 
 	// --- Application ---
 	// AutoConnect connects to the last active profile on launch.
@@ -188,19 +344,27 @@ func (s AppSettings) TunInterfaceName() string {
 // DefaultTunName is the built-in WinTun adapter name.
 const DefaultTunName = "TomorrowTun"
 
-// DefaultSettings returns the out-of-the-box configuration. sing-box is the
-// default core as requested.
+// DefaultSettings returns the out-of-the-box configuration. The core is picked
+// per profile until the user pins one.
 func DefaultSettings() AppSettings {
 	return AppSettings{
 		SettingsVersion: SettingsVersion,
 
-		Core:        CoreSingBox,
+		Core:        CoreAuto,
 		AutoConnect: false,
 		DNS:         "1.1.1.1",
 		DNSFallback: "8.8.8.8",
 		TunName:     DefaultTunName,
 		Stack:       "mixed",
 		MTU:         0,
+		RoutingMode: RoutingSimple,
+		Graph:       RouteGraph{Final: ActionProxy},
+		StrictRoute: true,
+		Sniff:       true,
+		HWIDEnabled: true,
+		PingMethod:  PingGET,
+		PingURL:     DefaultPingURL,
+		PingTimeout: 5000,
 		Theme:       "graphite",
 		Accent:      "indigo",
 		Font:        "inter",
@@ -221,11 +385,12 @@ type Stats struct {
 
 // Status is the full connection snapshot pushed to the UI.
 type Status struct {
-	State         ConnState `json:"state"`
-	Core          Core      `json:"core"`
-	ActiveProfile *Profile  `json:"activeProfile"`
-	Error         string    `json:"error,omitempty"`
-	Stats         Stats     `json:"stats"`
+	State ConnState `json:"state"`
+	// Core is the engine actually carrying the connection — never CoreAuto.
+	Core          Core     `json:"core"`
+	ActiveProfile *Profile `json:"activeProfile"`
+	Error         string   `json:"error,omitempty"`
+	Stats         Stats    `json:"stats"`
 	// ConnectedAt is a unix millisecond timestamp, 0 when not connected.
 	ConnectedAt int64 `json:"connectedAt"`
 }

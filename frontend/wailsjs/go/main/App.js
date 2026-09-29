@@ -38,8 +38,24 @@ export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
 }
 
+export function GetCoreIssues() {
+  return window['go']['main']['App']['GetCoreIssues']();
+}
+
+export function GetCores() {
+  return window['go']['main']['App']['GetCores']();
+}
+
+export function GetDeviceInfo() {
+  return window['go']['main']['App']['GetDeviceInfo']();
+}
+
 export function GetLogs() {
   return window['go']['main']['App']['GetLogs']();
+}
+
+export function GetProfileCores(arg1) {
+  return window['go']['main']['App']['GetProfileCores'](arg1);
 }
 
 export function GetProfiles() {
@@ -62,8 +78,8 @@ export function GetSubscriptions() {
   return window['go']['main']['App']['GetSubscriptions']();
 }
 
-export function ImportLink(arg1) {
-  return window['go']['main']['App']['ImportLink'](arg1);
+export function ImportLinks(arg1) {
+  return window['go']['main']['App']['ImportLinks'](arg1);
 }
 
 export function ListProcesses() {
@@ -98,6 +114,10 @@ export function SaveProfile(arg1) {
   return window['go']['main']['App']['SaveProfile'](arg1);
 }
 
+export function SaveProfileJSON(arg1, arg2) {
+  return window['go']['main']['App']['SaveProfileJSON'](arg1, arg2);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
@@ -108,6 +128,10 @@ export function SimulateStatus(arg1) {
 
 export function StopSimulation() {
   return window['go']['main']['App']['StopSimulation']();
+}
+
+export function SubscriptionHeaders() {
+  return window['go']['main']['App']['SubscriptionHeaders']();
 }
 
 export function UpdateSubscription(arg1) {

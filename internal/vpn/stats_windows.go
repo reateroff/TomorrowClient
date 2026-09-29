@@ -3,6 +3,8 @@
 package vpn
 
 import (
+	"sync/atomic"
+
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 
 	"TomorrowClient/internal/model"
@@ -11,7 +13,20 @@ import (
 // activeTunName is the WinTun adapter name in use for the current connection.
 // It defaults to the built-in name and is overwritten by the engine on Connect,
 // keeping the sing-box config and this stats matcher in agreement.
-var activeTunName = model.DefaultTunName
+var activeTunName tunName
+
+// tunName is read by the stats loop and interface lookup while Connect may be
+// replacing it.
+type tunName struct{ v atomic.Value }
+
+func (t *tunName) Load() string {
+	if s, ok := t.v.Load().(string); ok {
+		return s
+	}
+	return model.DefaultTunName
+}
+
+func (t *tunName) Store(s string) { t.v.Store(s) }
 
 // adapterBytes returns the received and sent octets of the adapter the core
 // created, matched by its alias. Returns ok=false when it is not present.
@@ -28,7 +43,7 @@ func adapterBytes() (rx, tx uint64, ok bool) {
 		return 0, 0, false
 	}
 	for i := range rows {
-		if rows[i].Alias() == activeTunName {
+		if rows[i].Alias() == activeTunName.Load() {
 			return rows[i].InOctets, rows[i].OutOctets, true
 		}
 	}

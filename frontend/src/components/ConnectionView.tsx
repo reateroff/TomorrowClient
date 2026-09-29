@@ -14,6 +14,7 @@ import {
   latencyTone,
 } from "../format";
 import { stripCountryPrefix } from "../flags";
+import { CORE_LABEL } from "../proto";
 import { PingLatency } from "../../wailsjs/go/main/App";
 
 // How often the live ping refreshes while connected.
@@ -169,6 +170,13 @@ export default function ConnectionView({
 
         <div className="text-center">
           <div className="text-base font-medium text-text">{label}</div>
+          {/* With several cores, which one carries the tunnel is worth a
+              quiet line — auto picks per server. */}
+          {isConnected && (
+            <div className="mt-0.5 font-mono text-[11px] text-text-faint">
+              {CORE_LABEL[status.core] ?? status.core}
+            </div>
+          )}
           {status.error && state === "error" && (
             <div className="mt-1 max-w-xs text-xs text-danger">
               {status.error}

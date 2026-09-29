@@ -22,13 +22,14 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 
+	"TomorrowClient/internal/cores"
 	"TomorrowClient/internal/model"
 	"TomorrowClient/internal/vpn"
 )
 
-// coreBinaries are the runtime files expected next to the executable. sing-box
-// is linked into the app, so wintun.dll is all that is left: sing-box loads it
-// to create the TUN adapter. The second field is the argument that makes a file
+// coreBinaries are the runtime files expected next to the executable. Every
+// core is linked into the app, so wintun.dll is all that is left: sing-box
+// loads it to create the TUN adapter. The second field is the argument that makes a file
 // print its version ("" = not an executable).
 var coreBinaries = []struct {
 	name       string
@@ -222,6 +223,10 @@ func (a *App) SimulateStatus(scenario string) error {
 	st := model.Status{State: sc.state, Core: s.Core, Error: sc.err}
 	if p, found := a.store.Profile(s.ActiveProfileID); found {
 		st.ActiveProfile = &p
+		st.Core, _ = cores.Resolve(s.Core, p)
+	}
+	if st.Core == model.CoreAuto {
+		st.Core = model.CoreSingBox
 	}
 
 	if sc.state == model.StateConnected {

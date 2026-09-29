@@ -19,7 +19,11 @@ import (
 // physical adapter, so the measurement stays out of the app's own tunnel when
 // one is running. Without it a probe would be carried through the active proxy
 // and time the wrong path entirely.
-func BuildProbe(p model.Profile, listenPort int) ([]byte, error) {
+func BuildProbe(p model.Profile, listenPort int, f Flavor) ([]byte, error) {
+	proxy, err := outbound(p, f)
+	if err != nil {
+		return nil, err
+	}
 	cfg := map[string]any{
 		"log": map[string]any{"disabled": true},
 		"inbounds": []any{
@@ -30,11 +34,20 @@ func BuildProbe(p model.Profile, listenPort int) ([]byte, error) {
 				"listen_port": listenPort,
 			},
 		},
-		"outbounds": []any{outbound(p)},
-		"route": map[string]any{
-			"final":                 "proxy",
-			"auto_detect_interface": true,
+		// The server name goes to the system resolver, as any app's would.
+		"dns": map[string]any{
+			"servers": []any{map[string]any{"type": "local", "tag": "system"}},
 		},
+		"route": map[string]any{
+			"final":                   "proxy",
+			"auto_detect_interface":   true,
+			"default_domain_resolver": "system",
+		},
+	}
+	if proxy["type"] == "wireguard" {
+		cfg["endpoints"] = []any{proxy}
+	} else {
+		cfg["outbounds"] = []any{proxy}
 	}
 	return json.Marshal(cfg)
 }

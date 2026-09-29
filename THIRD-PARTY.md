@@ -8,7 +8,9 @@ TomorrowClient распространяется под AGPL-3.0-or-later (см. 
 
 | Компонент | Лицензия | Как используется |
 |---|---|---|
-| [sing-box](https://github.com/SagerNet/sing-box) | GPL-3.0-or-later | Ядро. Линкуется статически в исполняемый файл |
+| [sing-box](https://github.com/SagerNet/sing-box) | GPL-3.0-or-later | Ядро и туннель перед Xray/mihomo. Линкуется статически |
+| [TodayCore](https://github.com/TumGovic/TodayCore) | GPL-3.0-or-later (части из Xray — MPL-2.0) | Ядро. Исходники в `third_party/todaycore`, линкуется статически |
+| [mihomo](https://github.com/MetaCubeX/mihomo) | GPL-3.0 | Ядро. Линкуется статически |
 | [sing-tun](https://github.com/SagerNet/sing-tun) | GPL-3.0-or-later | TUN-транспорт ядра, линкуется вместе с ним |
 
 Именно это определяет выбор лицензии. sing-box распространяется под
@@ -20,6 +22,11 @@ GPL-3.0-**or-later** и вкомпилирован в бинарник, поэт
 Практическое следствие: **исходный код обязан оставаться открытым**. Выпустить
 на основе этого кода закрытый продукт нельзя.
 
+TodayCore лежит в репозитории целиком (`third_party/todaycore`): это форк
+sing-box, пересобранный скриптом `scripts/sync-todaycore.sh` поверх той версии
+sing-box, что линкуется в приложение, под собственным module path. Его исходный
+код тем самым распространяется вместе с исходниками клиента.
+
 Лицензия sing-box содержит дополнительное условие: производная работа не должна
 использовать его имя или подразумевать связь с проектом без разрешения. Поэтому
 sing-box упоминается здесь и в интерфейсе только как используемая технология.
@@ -28,11 +35,13 @@ sing-box упоминается здесь и в интерфейсе тольк
 
 | Компонент | Лицензия |
 |---|---|
+| [Xray-core](https://github.com/XTLS/Xray-core) | MPL-2.0 (ядро, линкуется статически) |
 | [Wails](https://github.com/wailsapp/wails) | MIT |
 | [wireguard-windows/winipcfg](https://git.zx2c4.com/wireguard-windows/) | MIT |
 | [Wintun](https://www.wintun.net/) | GPL-2.0 (поставляется как отдельная DLL, не линкуется) |
 | [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) | MIT |
 | [lucide-react](https://lucide.dev/) | ISC |
+| [Sonner](https://sonner.emilkowal.ski/) | MIT |
 | [country-flag-icons](https://github.com/catamphetamine/country-flag-icons) | MIT |
 
 Шрифты в `frontend/src/fonts/`:

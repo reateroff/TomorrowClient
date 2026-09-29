@@ -1,7 +1,8 @@
-// Package sub fetches subscription URLs and turns them into profiles. A
-// subscription body is the common "Base64 list" format: base64 of a newline
-// separated list of share links (vless://, vmess://, trojan://, ss://). Some
-// providers return the plain list without base64, so we handle both.
+// Package sub fetches subscription URLs and turns them into profiles. The body
+// is usually the "Base64 list" format — base64 of a newline separated list of
+// share links (see link.Schemes), sometimes the plain list — but panels choose
+// the format by User-Agent and may send a sing-box or Clash config instead;
+// Parse reads all of them.
 package sub
 
 import (
@@ -19,8 +20,10 @@ import (
 	"TomorrowClient/internal/model"
 )
 
-// userAgent mimics a common client so providers that gate on it still respond.
-const userAgent = "TomorrowClient/1.0 (sing-box)"
+// DefaultUserAgent is sent unless the user sets another: "TomorrowClient/"
+// plus the app version, set by the app at start. Panels choose the answer
+// format by it; every format they send is understood (see Parse).
+var DefaultUserAgent = "TomorrowClient"
 
 // fetchTimeout bounds the whole request.
 const fetchTimeout = 20 * time.Second
@@ -44,10 +47,13 @@ const maxTitleLen = 64
 
 // Fetch downloads the subscription at url and parses it into profiles. Each
 // returned profile has its SubID set to subID so it can be replaced on update.
-// Individual links that fail to parse are skipped rather than failing the
+// Individual entries that fail to parse are skipped rather than failing the
 // whole import. The provider's Subscription-Userinfo header (if any) is
 // returned alongside as traffic/expiry metadata.
-func Fetch(url, subID string) ([]model.Profile, Meta, error) {
+//
+// headers go out with the request: the User-Agent and, when enabled, the
+// device (HWID) headers.
+func Fetch(url, subID string, headers map[string]string) ([]model.Profile, Meta, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
@@ -55,7 +61,12 @@ func Fetch(url, subID string) ([]model.Profile, Meta, error) {
 	if err != nil {
 		return nil, Meta{}, fmt.Errorf("bad subscription url: %w", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	for k, v := range headers {
+		if v != "" {
+			req.Header.Set(k, v)
+		}
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -76,22 +87,12 @@ func Fetch(url, subID string) ([]model.Profile, Meta, error) {
 		return nil, info, fmt.Errorf("read subscription: %w", err)
 	}
 
-	links := extractLinks(string(body))
-	if len(links) == 0 {
-		return nil, info, fmt.Errorf("no valid links in subscription")
+	profiles, err := Parse(string(body))
+	if err != nil {
+		return nil, info, fmt.Errorf("no supported servers in subscription: %w", err)
 	}
-
-	profiles := make([]model.Profile, 0, len(links))
-	for _, l := range links {
-		p, err := link.Parse(l)
-		if err != nil {
-			continue // skip unsupported/broken entries
-		}
-		p.SubID = subID
-		profiles = append(profiles, p)
-	}
-	if len(profiles) == 0 {
-		return nil, info, fmt.Errorf("no supported servers in subscription")
+	for i := range profiles {
+		profiles[i].SubID = subID
 	}
 	return profiles, info, nil
 }
@@ -160,9 +161,9 @@ func clampTitle(s string) string {
 	return s
 }
 
-// extractLinks turns a subscription body into a slice of share links. The body
+// ExtractLinks turns a subscription body into a slice of share links. The body
 // is either base64 of a link list, or the link list itself.
-func extractLinks(body string) []string {
+func ExtractLinks(body string) []string {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return nil
@@ -190,17 +191,7 @@ func looksLikeLinks(body string) bool {
 	return strings.Contains(body, "://")
 }
 
-func isSupportedLink(s string) bool {
-	return strings.HasPrefix(s, "vless://") ||
-		strings.HasPrefix(s, "vmess://") ||
-		strings.HasPrefix(s, "trojan://") ||
-		strings.HasPrefix(s, "ss://") ||
-		strings.HasPrefix(s, "hysteria2://") ||
-		strings.HasPrefix(s, "hy2://") ||
-		strings.HasPrefix(s, "hysteria://") ||
-		strings.HasPrefix(s, "hy://") ||
-		strings.HasPrefix(s, "tuic://")
-}
+func isSupportedLink(s string) bool { return link.IsLink(s) }
 
 // decodeBase64 tries the common base64 variants used by subscription providers.
 func decodeBase64(s string) (string, bool) {

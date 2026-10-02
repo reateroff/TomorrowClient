@@ -1,3 +1,4 @@
+import ModalPortal from "./ModalPortal";
 import { useMemo, useState } from "react";
 import { X, Loader2, Link2, Rss, FileCode2 } from "lucide-react";
 import { plural } from "../format";
@@ -98,6 +99,7 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
   };
 
   return (
+    <ModalPortal onClose={onClose}>
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6 backdrop-blur-sm"
       onClick={onClose}
@@ -170,7 +172,7 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
           <button
             onClick={submit}
             disabled={busy || !canSubmit}
-            className="no-drag flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
+            className="no-drag flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-soft disabled:opacity-50"
           >
             {busy && <Loader2 size={14} className="animate-spin" />}
             {kind === "sub" ? "Загрузить" : "Добавить"}
@@ -178,5 +180,6 @@ export default function AddModal({ onClose, onImportLink, onAddSub }: Props) {
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

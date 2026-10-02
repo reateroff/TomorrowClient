@@ -35,8 +35,8 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "TomorrowClient",
-		Width:     840,
-		Height:    560,
+		Width:     1120,
+		Height:    760,
 		MinWidth:  760,
 		MinHeight: 520,
 		// Frameless so we can draw our own dark title bar in React.

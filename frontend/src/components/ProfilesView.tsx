@@ -29,6 +29,7 @@ interface Props {
   onAddSub: (name: string, url: string) => Promise<void>;
   onUpdateSub: (id: string) => Promise<void>;
   onDeleteSub: (id: string) => void;
+  onDeleteProfile:(id:string)=>Promise<void>;
   // Pick a group as the active one; the Configs tab shows its servers.
   onSelectGroup: (groupId: string) => void;
 }
@@ -45,6 +46,7 @@ export default function ProfilesView({
   onAddSub,
   onUpdateSub,
   onDeleteSub,
+  onDeleteProfile,
   onSelectGroup,
 }: Props) {
   const [adding, setAdding] = useState(false);
@@ -95,7 +97,7 @@ export default function ProfilesView({
           </div>
           <button
             onClick={() => setAdding(true)}
-            className="no-drag flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
+            className="no-drag flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-soft"
           >
             <Plus size={16} />
             Добавить
@@ -185,6 +187,7 @@ export default function ProfilesView({
         <LinksModal
           title={linksTitle}
           profiles={linksProfiles}
+          onDelete={linksOf==="manual"?onDeleteProfile:undefined}
           hideData={hideData}
           onClose={() => setLinksOf(null)}
         />

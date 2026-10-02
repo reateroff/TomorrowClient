@@ -10,6 +10,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 
 	"golang.org/x/sys/windows"
@@ -94,4 +96,28 @@ func firstWord(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// IncyHWID follows INCY's published Windows algorithm. It is independently
+// derived; it does not read/claim identity from an installed INCY instance.
+func IncyHWID() string {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Cryptography`, registry.QUERY_VALUE|registry.WOW64_64KEY)
+	if err != nil {
+		return ""
+	}
+	defer k.Close()
+	guid, _, err := k.GetStringValue("MachineGuid")
+	if err != nil || guid == "" {
+		return ""
+	}
+	host, _ := os.Hostname()
+	osName := "Windows 10"
+	if windows.RtlGetVersion().BuildNumber >= 22000 {
+		osName = "Windows 11"
+	}
+	raw := strings.Join([]string{guid, host, osName, runtime.GOARCH, os.Getenv("USERNAME")}, "|")
+	deviceID := sha256.Sum256([]byte(raw))
+	hash := sha256.Sum256([]byte("incy_hwid_" + hex.EncodeToString(deviceID[:])))
+	h := strings.ToUpper(hex.EncodeToString(hash[:16]))
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }

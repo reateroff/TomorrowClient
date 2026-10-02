@@ -1,10 +1,10 @@
+import UpdateBanner from "./UpdateBanner";
 import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Timer,
   Gauge,
-  ChevronRight,
 } from "lucide-react";
 import type { Status, Profile } from "../types";
 import {
@@ -13,13 +13,11 @@ import {
   formatUptime,
   latencyTone,
 } from "../format";
-import { stripCountryPrefix } from "../flags";
 import { CORE_LABEL } from "../proto";
 import { PingLatency } from "../../wailsjs/go/main/App";
 
 // How often the live ping refreshes while connected.
 const PING_INTERVAL_MS = 5000;
-import FlagChip from "./FlagChip";
 import logoMark from "../assets/logo-mark.png";
 
 interface Props {
@@ -27,7 +25,6 @@ interface Props {
   activeProfile: Profile | null;
   onConnect: () => void;
   onDisconnect: () => void;
-  onOpenConfigs: () => void;
 }
 
 // The main screen: the active-server chip sits top-left (opens Configs, uses the
@@ -38,7 +35,6 @@ export default function ConnectionView({
   activeProfile,
   onConnect,
   onDisconnect,
-  onOpenConfigs,
 }: Props) {
   const [now, setNow] = useState(Date.now());
   const [ping, setPing] = useState<number | null>(null);
@@ -62,7 +58,7 @@ export default function ConnectionView({
   // few seconds costs nothing measurable. The next run is scheduled after the
   // previous one returns rather than on a fixed interval, so a server that
   // makes us wait out the echo timeout cannot pile requests up.
-  const pid = activeProfile?.id;
+  const pid = status.activeProfile?.id ?? activeProfile?.id;
   useEffect(() => {
     if (!isConnected || !pid) {
       setPing(null);
@@ -112,30 +108,13 @@ export default function ConnectionView({
 
   return (
     <div className="animate-view flex h-full flex-col p-6">
-      {/* Active-server chip, top-left → opens Configs. Radius follows theme. */}
-      <button
-        onClick={onOpenConfigs}
-        className="no-drag group flex max-w-xs items-center gap-2.5 self-start rounded-lg border border-border bg-surface py-2 pl-2 pr-3 transition hover:bg-surface-2/60"
-      >
-        <span className="grid h-7 w-9 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-bg">
-          <FlagChip name={activeProfile?.name ?? ""} />
-        </span>
-        <span className="min-w-0 truncate text-sm text-text">
-          {activeProfile
-            ? stripCountryPrefix(activeProfile.name)
-            : "Сервер не выбран"}
-        </span>
-        <ChevronRight
-          size={15}
-          className="shrink-0 text-text-faint transition group-hover:text-text-muted"
-        />
-      </button>
+      <UpdateBanner />
 
       {/* Centered connect button + status */}
       <div className="flex flex-1 flex-col items-center justify-center gap-5">
         <button
           onClick={handleClick}
-          disabled={isBusy || !activeProfile}
+          disabled={isBusy || (!isConnected && !activeProfile)}
           className="no-drag group relative grid place-items-center disabled:cursor-not-allowed disabled:opacity-50"
         >
           {(isConnected || isBusy) && (
@@ -150,21 +129,7 @@ export default function ConnectionView({
               isBusy ? "animate-pulse" : ""
             }`}
           >
-            {/* brightness-0 invert repaints the mark pure white while keeping
-                its alpha, because once the disc fills with the accent the logo's
-                own periwinkle sits right on top of it — with the default indigo
-                accent the two are nearly the same colour. Off, it keeps its own
-                colour and just dims until hovered. */}
-            <img
-              src={logoMark}
-              alt=""
-              draggable={false}
-              className={`h-24 w-24 transition ${
-                isConnected
-                  ? "brightness-0 invert"
-                  : "opacity-70 group-hover:opacity-100"
-              }`}
-            />
+            <span aria-hidden="true" className={`h-24 w-24 transition-[background-color,opacity] duration-200 ${isConnected ? 'bg-on-accent' : 'bg-accent opacity-80 group-hover:opacity-100'}`} style={{maskImage:`url(${logoMark})`,WebkitMaskImage:`url(${logoMark})`,maskSize:'contain',WebkitMaskSize:'contain',maskRepeat:'no-repeat',WebkitMaskRepeat:'no-repeat',maskPosition:'center',WebkitMaskPosition:'center'}} />
           </span>
         </button>
 

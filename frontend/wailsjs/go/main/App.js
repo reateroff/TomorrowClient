@@ -6,8 +6,20 @@ export function AddSubscription(arg1, arg2) {
   return window['go']['main']['App']['AddSubscription'](arg1, arg2);
 }
 
+export function CheckUpdates() {
+  return window['go']['main']['App']['CheckUpdates']();
+}
+
 export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
+}
+
+export function CloseConnection(arg1) {
+  return window['go']['main']['App']['CloseConnection'](arg1);
+}
+
+export function CollectGarbage() {
+  return window['go']['main']['App']['CollectGarbage']();
 }
 
 export function Connect(arg1) {
@@ -26,8 +38,20 @@ export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }
 
+export function DownloadUpdate() {
+  return window['go']['main']['App']['DownloadUpdate']();
+}
+
 export function ExportDiagnostics() {
   return window['go']['main']['App']['ExportDiagnostics']();
+}
+
+export function ExportHeapProfile() {
+  return window['go']['main']['App']['ExportHeapProfile']();
+}
+
+export function ExportRouting() {
+  return window['go']['main']['App']['ExportRouting']();
 }
 
 export function GetActiveProfileJSON() {
@@ -36,6 +60,10 @@ export function GetActiveProfileJSON() {
 
 export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
+}
+
+export function GetConnections() {
+  return window['go']['main']['App']['GetConnections']();
 }
 
 export function GetCoreIssues() {
@@ -50,6 +78,10 @@ export function GetDeviceInfo() {
   return window['go']['main']['App']['GetDeviceInfo']();
 }
 
+export function GetGoroutineDump() {
+  return window['go']['main']['App']['GetGoroutineDump']();
+}
+
 export function GetLogs() {
   return window['go']['main']['App']['GetLogs']();
 }
@@ -60,6 +92,10 @@ export function GetProfileCores(arg1) {
 
 export function GetProfiles() {
   return window['go']['main']['App']['GetProfiles']();
+}
+
+export function GetRuntimeStats() {
+  return window['go']['main']['App']['GetRuntimeStats']();
 }
 
 export function GetSettings() {
@@ -78,8 +114,16 @@ export function GetSubscriptions() {
   return window['go']['main']['App']['GetSubscriptions']();
 }
 
+export function GetUpdateInfo() {
+  return window['go']['main']['App']['GetUpdateInfo']();
+}
+
 export function ImportLinks(arg1) {
   return window['go']['main']['App']['ImportLinks'](arg1);
+}
+
+export function ImportRouting() {
+  return window['go']['main']['App']['ImportRouting']();
 }
 
 export function ListProcesses() {
@@ -122,6 +166,10 @@ export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
+export function ShowUpdateFolder() {
+  return window['go']['main']['App']['ShowUpdateFolder']();
+}
+
 export function SimulateStatus(arg1) {
   return window['go']['main']['App']['SimulateStatus'](arg1);
 }
@@ -132,6 +180,10 @@ export function StopSimulation() {
 
 export function SubscriptionHeaders() {
   return window['go']['main']['App']['SubscriptionHeaders']();
+}
+
+export function TestProfileSpeed(arg1) {
+  return window['go']['main']['App']['TestProfileSpeed'](arg1);
 }
 
 export function UpdateSubscription(arg1) {

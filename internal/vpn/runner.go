@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"TomorrowClient/internal/cores"
 	"TomorrowClient/internal/mihomo"
 	"TomorrowClient/internal/model"
 	"TomorrowClient/internal/singbox"
@@ -49,9 +50,11 @@ func startCore(c model.Core, p model.Profile, s model.AppSettings, logs *LogSink
 // listener. The listener takes a per-connection random password, so no other
 // program on the machine can use it as an open proxy.
 func startFronted(c model.Core, p model.Profile, s model.AppSettings, logs *LogSink) (runner, error) {
+	// Resolve Auto before selecting the core-specific front cache.
+	s.Core = c
 	up, iface, err := newUpstream(p)
 	if err != nil {
-		return nil, err
+		return nil, coreStageError(c, "локальная связь с TUN", err)
 	}
 
 	var core runner
@@ -59,38 +62,46 @@ func startFronted(c model.Core, p model.Profile, s model.AppSettings, logs *LogS
 	case model.CoreXray:
 		cfg, err := xray.Build(p, xray.Local{Port: up.Port, Username: up.Username, Password: up.Password, Interface: iface})
 		if err != nil {
-			return nil, err
+			return nil, coreStageError(c, "конфигурация ядра", err)
 		}
 		core, err = startXray(cfg, logs)
 		if err != nil {
-			return nil, err
+			return nil, coreStageError(c, "запуск ядра", err)
 		}
 	case model.CoreMihomo:
 		cfg, err := mihomo.Build(p, mihomo.Local{Port: up.Port, Username: up.Username, Password: up.Password, Interface: iface})
 		if err != nil {
-			return nil, err
+			return nil, coreStageError(c, "конфигурация ядра", err)
 		}
 		core, err = startMihomo(cfg, up.Port, logs)
 		if err != nil {
-			return nil, err
+			return nil, coreStageError(c, "запуск ядра", err)
 		}
 	}
 
 	frontCfg, err := singbox.BuildFront(s, up)
 	if err != nil {
 		core.stop()
-		return nil, err
+		return nil, coreStageError(c, "конфигурация TUN/DNS/маршрутизации (sing-box)", err)
 	}
 	front, err := startBox(frontCfg, logs)
 	if err != nil {
 		core.stop()
-		return nil, err
+		return nil, coreStageError(c, "TUN/DNS/маршрутизация (sing-box)", err)
 	}
 	// Front first: nothing should reach the core while it is shutting down.
 	return runnerFunc(func() {
 		front.stop()
 		core.stop()
 	}), nil
+}
+
+// coreStageError identifies the selected core without hiding the failing layer.
+func coreStageError(c model.Core, stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s — %s: %w", cores.Name(c), stage, err)
 }
 
 // newUpstream picks the loopback port and credentials linking the front to a
@@ -119,6 +130,7 @@ func randomToken() string {
 // Preview renders the configs core c would run for p, for the developer tools.
 // A fronted core shows both halves. The loopback credentials are placeholders.
 func Preview(c model.Core, p model.Profile, s model.AppSettings) (string, error) {
+	s.Core = c
 	switch c {
 	case model.CoreSingBox, model.CoreTodayCore:
 		f := singbox.Upstream

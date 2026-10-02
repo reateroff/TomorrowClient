@@ -57,15 +57,10 @@ func NewMemory() *Store {
 // installs — an existing settings.json keeps the old value forever — so a value
 // that must actually move needs a migration here.
 func (s *Store) migrate() bool {
+	legacyStack := s.settings.Stack != ""
+	s.settings.Stack = ""
 	if s.settings.SettingsVersion >= model.SettingsVersion {
-		return false
-	}
-
-	// v1: the default TUN stack moved from gvisor to mixed. In a pre-v1 file
-	// "gvisor" cannot be told apart from a deliberate pick, so it is rewritten
-	// exactly once; the recorded version stops it happening again.
-	if s.settings.SettingsVersion < 1 && s.settings.Stack == "gvisor" {
-		s.settings.Stack = "mixed"
+		return legacyStack
 	}
 
 	// v2: several cores, picked per profile by default. Before v2 sing-box was
@@ -74,6 +69,11 @@ func (s *Store) migrate() bool {
 		s.settings.Core = model.CoreAuto
 	}
 
+	// v3: Xray replaces the previous automatic default. Explicit core choices
+	// are preserved; Auto chosen after this migration remains a valid opt-in.
+	if s.settings.SettingsVersion < 3 && (s.settings.Core == model.CoreAuto || s.settings.Core == "") {
+		s.settings.Core = model.CoreXray
+	}
 	s.settings.SettingsVersion = model.SettingsVersion
 	return true
 }
@@ -125,6 +125,12 @@ func (s *Store) Settings() model.AppSettings {
 
 // SaveSettings persists the given settings.
 func (s *Store) SaveSettings(cfg model.AppSettings) error {
+	// Enforce this in the store too: JSON editing/imports cannot override TUN.
+	cfg.Stack = ""
+	cfg.SettingsVersion = model.SettingsVersion
+	if cfg.Core == "" {
+		cfg.Core = model.CoreXray
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings = cfg
@@ -178,6 +184,11 @@ func (s *Store) UpsertProfile(p model.Profile) error {
 	defer s.mu.Unlock()
 	for i := range s.profiles {
 		if s.profiles[i].ID == p.ID {
+			if !sameSpeedProfile(s.profiles[i], p) {
+				p.Speed = nil
+			} else {
+				p.Speed = s.profiles[i].Speed
+			}
 			s.profiles[i] = p
 			return writeJSON(s.profilesPath(), s.profiles)
 		}
@@ -248,6 +259,9 @@ func (s *Store) ReplaceSubProfiles(subID string, profiles []model.Profile) error
 		if p.SubID != subID {
 			kept = append(kept, p)
 		}
+	}
+	for i := range profiles {
+		profiles[i].Speed = nil
 	}
 	kept = append(kept, profiles...)
 	s.profiles = kept

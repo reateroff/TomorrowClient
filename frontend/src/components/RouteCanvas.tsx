@@ -1,7 +1,9 @@
+import ModalPortal from "./ModalPortal";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Globe2,
   AtSign,
+  StickyNote,
   Type,
   Regex,
   Network,
@@ -146,20 +148,20 @@ export const NODE_TYPES: Record<NodeType, TypeMeta> = {
   },
   network: {
     label: "Сеть",
-    hint: "TCP или UDP",
+    hint: "Транспорт: TCP / UDP / ICMP",
     icon: <Cable size={15} />,
     color: "#fcd34d",
     placeholder: "udp",
-    suggest: ["tcp", "udp"],
-    validate: (v) => (/^(tcp|udp)$/i.test(v) ? null : "tcp или udp"),
+    suggest: ["tcp", "udp", "icmp"],
+    validate: (v) => (/^(tcp|udp|icmp)$/i.test(v) ? null : "tcp, udp или icmp"),
   },
   protocol: {
     label: "Протоколы",
-    hint: "Определяются сниффингом",
+    hint: "HTTP, TLS, QUIC и другие · сниффинг",
     icon: <Radio size={15} />,
     color: "#fdba74",
     placeholder: "bittorrent",
-    suggest: ["tls", "http", "quic", "bittorrent", "stun", "dtls", "ssh", "rdp", "ntp"],
+    suggest: ["tls", "http", "quic", "dns", "bittorrent", "stun", "dtls", "ssh", "rdp", "ntp"],
     validate: (v) =>
       /^(tls|http|quic|bittorrent|stun|dtls|ssh|rdp|ntp|dns)$/i.test(v) ? null : "Протокол из списка",
   },
@@ -193,7 +195,7 @@ const FIELD: Record<NodeType, { label: string; example: string; list: boolean }>
   port: { label: "Порт или диапазон", example: "443, 27000-27100", list: true },
   process: { label: "Имя процесса", example: "chrome.exe, telegram.exe", list: true },
   process_path: { label: "Путь к приложению", example: "C:\\Games\\game.exe", list: false },
-  network: { label: "Сеть", example: "tcp, udp", list: true },
+  network: { label: "Транспорт", example: "tcp, udp, icmp", list: true },
   protocol: { label: "Протокол", example: "bittorrent, quic", list: true },
   geosite: { label: "Список GeoSite", example: "youtube, category-ads-all", list: true },
   geoip: { label: "Страна или список GeoIP", example: "ru, us", list: true },
@@ -201,10 +203,10 @@ const FIELD: Record<NodeType, { label: string; example: string; list: boolean }>
 
 // The + menu, grouped by what a node matches on.
 const TYPE_GROUPS: { title: string; types: NodeType[] }[] = [
-  { title: "Сайты", types: ["domain", "domain_keyword", "domain_regex", "geosite"] },
+  { title: "Сайты", types: ["domain", "domain_regex", "geosite"] },
   { title: "Адреса и порты", types: ["ip", "geoip", "port"] },
   { title: "Приложения", types: ["process", "process_path"] },
-  { title: "Трафик", types: ["network", "protocol"] },
+  { title: "Сети и протоколы", types: ["network", "protocol"] },
 ];
 
 interface ActionMeta {
@@ -245,11 +247,11 @@ const ACTION_ORDER: RouteAction[] = ["block", "direct", "proxy"];
 // tall a node's value list has grown.
 const NODE_W = 244;
 const ACTION_W = 208;
-const PORT_Y = 27;
+const PORT_Y = 24;
 const FINAL_ID = "final";
 
 const DEFAULT_LAYOUT: Record<string, Point> = {
-  final: { x: 40, y: 520 },
+  final: { x: 40, y: 40 },
   block: { x: 640, y: 40 },
   direct: { x: 640, y: 200 },
   proxy: { x: 640, y: 380 },
@@ -280,11 +282,11 @@ function actionSpot(g: RouteGraph): Point {
 
 // graphFromRules seeds a Pro graph from the simple rule list: one node per
 // (type, action) pair, so switching modes loses nothing.
-export function graphFromRules(rules: RoutingRule[]): RouteGraph {
+export function graphFromRules(rules: RoutingRule[], final: RouteAction = "proxy"): RouteGraph {
   const nodes: RouteNode[] = [];
   let y = 40;
   for (const action of ACTION_ORDER) {
-    for (const type of ["ip", "domain", "process"] as NodeType[]) {
+    for (const type of ["ip", "domain", "process", "geosite", "geoip"] as NodeType[]) {
       const own = rules.filter((r) => r.type === type && r.action === action);
       if (own.length === 0) continue;
       const icons: Record<string, string> = {};
@@ -295,29 +297,46 @@ export function graphFromRules(rules: RoutingRule[]): RouteGraph {
   }
   const layout: Record<string, Point> = { final: { x: 40, y: Math.max(y, DEFAULT_LAYOUT.final.y) } };
   for (const a of ACTION_ORDER) {
-    if (a === "proxy" || nodes.some((n) => n.action === a)) layout[a] = DEFAULT_LAYOUT[a];
+    if (a === "proxy" || a === final || nodes.some((n) => n.action === a)) layout[a] = DEFAULT_LAYOUT[a];
   }
-  return { nodes, final: "proxy", layout };
+  return { nodes, final, layout };
 }
 
 // estimateHeight approximates a rendered node for auto-layout.
 const estimateHeight = (n: RouteNode) => 104 + Math.min(n.values.length, 6) * 34;
 
-// autoLayout stacks the matchers in priority order with the catch-all last,
-// and spreads the actions down the right. Heights are measured when the nodes
-// are on screen, estimated otherwise.
+// Compact row-major layout keeps priority order without a long single column.
+// Up to six blocks use two columns; larger graphs use three.
 function autoLayout(g: RouteGraph, heights: Record<string, number> = {}): RouteGraph {
+  const total = g.nodes.length + (g.finalHidden ? 0 : 1);
+  const columns = total <= 3 ? 1 : total <= 6 ? 2 : 3;
+  const gapX = 48, gapY = 28;
   let y = 40;
-  const nodes = g.nodes.map((n) => {
-    const placed = { ...n, x: 40, y };
-    y += (heights[n.id] ?? estimateHeight(n)) + 24;
-    return placed;
-  });
-  const span = Math.max(y + 120, 560);
-  const layout: Record<string, Point> = { final: { x: 40, y } };
+  const positions: Point[] = [];
+  for (let i = 0; i < total; i += columns) {
+    let rowHeight = 0;
+    for (let c = 0; c < columns && i + c < total; c++) {
+      const n = g.nodes[i + c];
+      positions.push({ x: 40 + c * (NODE_W + gapX), y });
+      rowHeight = Math.max(rowHeight, n
+        ? heights[n.id] ?? estimateHeight(n)
+        : heights[FINAL_ID] ?? 120);
+    }
+    y += rowHeight + gapY;
+  }
+  const nodes = g.nodes.map((n, i) => ({ ...n, ...positions[i] }));
+  const layout: Record<string, Point> = { ...g.layout, final: positions[g.nodes.length] ?? g.layout.final };
   const own = presentActions(g);
-  own.forEach((a, i) => (layout[a] = { x: 420, y: span * (0.12 + (0.56 * i) / Math.max(own.length - 1, 1)) }));
-  return { ...g, nodes, layout };
+  const actionX = 40 + Math.min(columns, Math.max(total, 1)) * (NODE_W + gapX) - gapX + 140;
+  own.forEach((a, i) => {
+    layout[a] = { x: actionX, y: 40 + i * 150 };
+  });
+  const noteY = Math.max(y, 40 + own.length * 150) + 24;
+  const notes = g.notes?.map((n, i) => ({
+    ...n, x: 40 + (i % columns) * (280 + gapX),
+    y: noteY + Math.floor(i / columns) * (Math.max(140, ...g.notes!.map(note => heights[note.id] ?? 140)) + gapY),
+  }));
+  return { ...g, nodes, layout, ...(notes ? { notes } : {}) };
 }
 
 // ------------------------------------------------------------------ component
@@ -423,6 +442,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
 
   const commit = useCallback(
     (g: RouteGraph) => {
+      graphRef.current=g;
       setGraph(g);
       onChange({ ...settings, graph: g });
     },
@@ -522,8 +542,10 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
     const g = graphRef.current;
     const pts = [
       ...g.nodes.map((n) => ({ x: n.x, y: n.y, w: NODE_W, h: estimateHeight(n) })),
-      ...["final", ...presentActions(g)].map((k) => ({ ...g.layout[k], w: NODE_W, h: 120 })),
+      ...(g.notes??[]).map(n=>({...n,w:280,h:140})),
+      ...[...(g.finalHidden?[]:["final"]), ...presentActions(g)].map((k) => ({ ...g.layout[k], w: NODE_W, h: 120 })),
     ];
+    if(!pts.length){setView({x:24,y:24,z:0.9});return}
     const minX = Math.min(...pts.map((p) => p.x));
     const minY = Math.min(...pts.map((p) => p.y));
     const maxX = Math.max(...pts.map((p) => p.x + p.w));
@@ -548,17 +570,25 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
 
   // A new node joins the end of the matcher column — where it also sits in
   // priority — taking the catch-all's place and pushing it down.
+  const addNote=()=>{setAddMenu(false);if(disabled)return;const g=graphRef.current;const positions=[...g.nodes,...(g.notes??[]),...Object.entries(g.layout).filter(([k])=>k!=="final"||!g.finalHidden).map(([,p])=>p)];const x=Math.max(40,...positions.map(p=>p.x+NODE_W+32));edit(g=>({...g,notes:[...(g.notes??[]),{id:newId(),text:"",x,y:Math.min(...positions.map(p=>p.y),g.layout.final.y)}]}));requestAnimationFrame(fit)};
+  const restoreFinal=()=>{setAddMenu(false);edit(g=>({...g,finalHidden:false,final:"",layout:{...g.layout,final:{x:40,y:Math.max(40,...g.nodes.map(n=>n.y+estimateHeight(n)+24))}}}));requestAnimationFrame(fit)};
   const addNode = (type: NodeType) => {
     setAddMenu(false);
     if (disabled) return;
     const g = graphRef.current;
     const at = { ...g.layout.final };
     const node: RouteNode = { id: newId(), type, name: "", values: [], action: "", x: at.x, y: at.y };
-    commit({
+    const next = {
       ...g,
       nodes: [...g.nodes, node],
       layout: { ...g.layout, final: { x: at.x, y: at.y + estimateHeight(node) + 28 } },
-    });
+    };
+    if (next.nodes.length + (next.finalHidden ? 0 : 1) > 3) {
+      commit(autoLayout(next, measure()));
+      requestAnimationFrame(fit);
+      return;
+    }
+    commit(next);
     // Bring it into view if it landed below the fold.
     const r = wrap.current?.getBoundingClientRect();
     if (r) {
@@ -588,7 +618,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
     const g = graphRef.current;
     const items = [
       ...g.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
-      { id: FINAL_ID, ...g.layout.final },
+      ...(g.finalHidden?[]:[{ id: FINAL_ID, ...g.layout.final }]),
     ].sort((a, b) => a.y - b.y);
     let moved = false;
     items.forEach((it, i) => {
@@ -607,7 +637,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
     commit({
       ...g,
       nodes: g.nodes.map((n) => ({ ...n, y: pos[n.id] })),
-      layout: { ...g.layout, final: { ...g.layout.final, y: pos[FINAL_ID] } },
+      layout: { ...g.layout, final: { ...g.layout.final, y: pos[FINAL_ID] ?? g.layout.final.y } },
     });
   }, [graph, drag, commit]);
 
@@ -620,7 +650,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
       out.push({ id: n.id, from: outPort(n), to: inPort(graph, a), action: a });
     });
     const f = graph.layout.final;
-    if (hasAction(graph, graph.final)) {
+    if (!graph.finalHidden && hasAction(graph, graph.final)) {
       out.push({
         id: FINAL_ID,
         from: { x: f.x + NODE_W, y: f.y + PORT_Y },
@@ -702,6 +732,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
             )}
           </svg>
 
+          {(graph.notes??[]).map(note=><div key={note.id} data-node-id={note.id} className="absolute w-[280px] rounded-lg border border-border bg-surface shadow-lg" style={{left:note.x,top:note.y}} onMouseDown={e=>e.stopPropagation()} onContextMenu={e=>{e.preventDefault();const r=wrap.current!.getBoundingClientRect();setCtx({id:note.id,x:Math.max(8,Math.min(e.clientX-r.left,r.width-184)),y:Math.max(8,Math.min(e.clientY-r.top,r.height-52))})}}><div onMouseDown={e=>startNode(note.id,e)} className="flex cursor-move items-center gap-2 px-3 pt-3 pb-2 text-xs text-text-muted"><StickyNote size={14}/>Заметка</div><textarea aria-label="Текст заметки" disabled={disabled} maxLength={4000} value={note.text} placeholder="Напишите заметку…" className="mx-3 mb-3 min-h-20 w-[calc(100%-24px)] resize-y rounded-md bg-bg px-2 py-2 text-xs text-text outline-none focus:ring-1 focus:ring-accent/40" onChange={e=>edit(g=>({...g,notes:g.notes?.map(n=>n.id===note.id?{...n,text:e.target.value}:n)}))}/></div>)}
           {graph.nodes.map((n, i) => (
             <MatcherNode
               key={n.id}
@@ -732,14 +763,15 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
             />
           ))}
 
-          <FinalNode
+          {!graph.finalHidden && <FinalNode
             pos={graph.layout.final}
             wired={hasAction(graph, graph.final)}
             disabled={disabled}
             wiring={drag?.kind === "wire" && drag.from === FINAL_ID}
             onGrab={(e) => startNode(FINAL_ID, e)}
             onWire={(e) => startWire(FINAL_ID, e)}
-          />
+            onContext={e=>{if(disabled)return;const r=e.currentTarget.closest(".route-canvas")!.getBoundingClientRect();setCtx({id:FINAL_ID,x:Math.max(8,Math.min(e.clientX-r.left,r.width-184)),y:Math.max(8,Math.min(e.clientY-r.top,r.height-52))})}}
+          />}
 
           {presentActions(graph).map((a) => (
             <ActionNode
@@ -808,6 +840,24 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
                   Действия
                 </div>
                 <div className="grid grid-cols-2 gap-1">
+                  <button
+                    disabled={!graph.finalHidden}
+                    onClick={restoreFinal}
+                    className="no-drag flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    <span
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-md"
+                      style={{ color: "#fb923c", background: "color-mix(in srgb, #fb923c 14%, transparent)" }}
+                    >
+                      <Ellipsis size={16} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm text-text">Остальное</span>
+                      <span className="block truncate text-[11px] text-text-faint">
+                        {graph.finalHidden ? "Добавить на холст" : "Уже на холсте"}
+                      </span>
+                    </span>
+                  </button>
                   {(["proxy", "direct", "block"] as RouteAction[]).map((a) => {
                     const there = hasAction(graph, a);
                     return (
@@ -837,6 +887,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
                   })}
                 </div>
               </div>
+              <div className="mb-3 border-b border-border pb-2"><button onClick={addNote} className="no-drag flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-surface"><StickyNote size={16}/><span><span className="block text-sm">Заметка</span><span className="text-[11px] text-text-faint">Свободный текст · не влияет на правила</span></span></button></div>
               {TYPE_GROUPS.map((g) => (
                 <div key={g.title}>
                   <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-text-faint">
@@ -875,7 +926,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
           onMouseDown={(e) => e.stopPropagation()}
           disabled={disabled}
           title="Добавить ноду"
-          className="no-drag grid h-12 w-12 place-items-center rounded-full bg-accent text-bg shadow-[0_8px_24px_rgb(0_0_0/0.35)] transition hover:bg-accent-soft active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className="no-drag grid h-12 w-12 place-items-center rounded-full bg-accent text-on-accent shadow-[0_8px_24px_rgb(0_0_0/0.35)] transition hover:bg-accent-soft active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus size={22} className={`transition-transform duration-200 ${addMenu ? "rotate-45" : ""}`} />
         </button>
@@ -887,7 +938,7 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
           style={{ left: ctx.x, top: ctx.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {!ctx.action && (
+          {!ctx.action && ctx.id !== FINAL_ID && !graph.notes?.some(n=>n.id===ctx.id) && (
             <>
               <MenuItem icon={<Copy size={13} />} onClick={() => (duplicate(ctx.id), setCtx(null))}>
                 Дублировать
@@ -899,7 +950,9 @@ export default function RouteCanvas({ settings, disabled, onChange }: Props) {
             icon={<Trash2 size={13} />}
             danger
             onClick={() => {
-              if (ctx.action) removeAction(ctx.id as RouteAction);
+              if (ctx.id === FINAL_ID) edit(g=>({...g,finalHidden:true,final:""}));
+              else if (graph.notes?.some(n=>n.id===ctx.id)) edit(g=>({...g,notes:g.notes?.filter(n=>n.id!==ctx.id)}));
+              else if (ctx.action) removeAction(ctx.id as RouteAction);
               else edit((g) => ({ ...g, nodes: g.nodes.filter((x) => x.id !== ctx.id) }));
               setCtx(null);
             }}
@@ -966,6 +1019,7 @@ function AddValueDialog({
   const suggestions = (meta.suggest ?? []).filter((x) => !node.values.includes(x) && !parts(draft).includes(x));
 
   return (
+    <ModalPortal onClose={onClose}>
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-sm" onMouseDown={onClose}>
       <div
         className="animate-view w-full max-w-[460px] rounded-2xl border border-border bg-surface p-5 shadow-2xl"
@@ -995,6 +1049,8 @@ function AddValueDialog({
           }`}
         />
 
+        {node.type === "network" && <p className="mt-2 text-[11px] leading-relaxed text-text-faint">ICMP — ping. Передача через VPN зависит от outbound ядра; SOCKS-серверы не передают ICMP. HTTP, TLS, QUIC и другие выбираются в блоке «Протоколы».</p>}
+        {node.type === "protocol" && <p className="mt-2 text-[11px] leading-relaxed text-text-faint">Нужно включить сниффинг в настройках подключения. DNS перехватывается системным правилом раньше пользовательских правил.</p>}
         {node.type === "process" && (
           <button
             onClick={() => setPicking(true)}
@@ -1031,7 +1087,7 @@ function AddValueDialog({
           <button
             onClick={submit}
             disabled={!draft.trim()}
-            className="no-drag rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
+            className="no-drag rounded-lg bg-accent px-4 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-soft disabled:opacity-50"
           >
             Добавить
           </button>
@@ -1055,6 +1111,7 @@ function AddValueDialog({
         </div>
       )}
     </div>
+    </ModalPortal>
   );
 }
 
@@ -1104,10 +1161,7 @@ function MatcherNode({
         onContext(e);
       }}
     >
-      <div
-        className="h-[3px] rounded-t-[var(--radius-lg)]"
-        style={{ background: meta.color, opacity: n.action ? 0.9 : 0.4 }}
-      />
+
       {/* Header doubles as the drag handle. */}
       <div
         onMouseDown={onGrab}
@@ -1184,7 +1238,7 @@ function MatcherNode({
       <button
         onMouseDown={onWire}
         title="Тяните к действию"
-        className={`absolute right-[-7px] top-[20px] h-3.5 w-3.5 rounded-full border-2 border-bg transition hover:scale-125 ${
+        className={`absolute right-[-7px] top-[17px] h-3.5 w-3.5 rounded-full border-2 border-bg transition hover:scale-125 ${
           disabled ? "cursor-default" : "cursor-crosshair"
         }`}
         style={{ background: n.action ? ACTIONS[n.action].color : "var(--color-text-faint)" }}
@@ -1231,6 +1285,7 @@ function FinalNode({
   wiring,
   onGrab,
   onWire,
+  onContext,
 }: {
   pos: Point;
   wired: boolean;
@@ -1238,6 +1293,7 @@ function FinalNode({
   wiring: boolean;
   onGrab: (e: React.MouseEvent) => void;
   onWire: (e: React.MouseEvent) => void;
+  onContext:(e:React.MouseEvent)=>void;
 }) {
   const color = "#fb923c";
   return (
@@ -1248,8 +1304,9 @@ function FinalNode({
       data-node-id={FINAL_ID}
       style={{ left: pos.x, top: pos.y, width: NODE_W }}
       onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={e=>{e.preventDefault();onContext(e)}}
     >
-      <div className="h-[3px] rounded-t-[var(--radius-lg)]" style={{ background: color }} />
+
       <div onMouseDown={onGrab} className={`flex items-center gap-2.5 px-3.5 pb-2 pt-2.5 ${disabled ? "" : "cursor-move"}`}>
         <span
           className="grid h-7 w-7 shrink-0 place-items-center rounded-md"
@@ -1257,7 +1314,7 @@ function FinalNode({
         >
           <Ellipsis size={15} />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-text">Остальное</div>
           <div className="text-[11px] text-text-faint">
             {wired ? "Всё, что не попало в правила" : "Не подключено — пойдёт через VPN"}
@@ -1266,7 +1323,7 @@ function FinalNode({
       </div>
       <button
         onMouseDown={onWire}
-        className={`absolute right-[-7px] top-[20px] h-3.5 w-3.5 rounded-full border-2 border-bg transition hover:scale-125 ${
+        className={`absolute right-[-7px] top-[17px] h-3.5 w-3.5 rounded-full border-2 border-bg transition hover:scale-125 ${
           disabled ? "cursor-default" : "cursor-crosshair"
         }`}
         style={{ background: color }}
@@ -1308,9 +1365,9 @@ function ActionNode({
         onContext(e);
       }}
     >
-      <div className="h-[3px] rounded-t-[var(--radius-lg)]" style={{ background: m.color }} />
+
       <span
-        className="absolute left-[-6px] top-[21px] h-3 w-3 rounded-full border-2 border-bg"
+        className="absolute left-[-6px] top-[18px] h-3 w-3 rounded-full border-2 border-bg"
         style={{ background: m.color }}
       />
       <div onMouseDown={onGrab} className="flex cursor-move items-center gap-2.5 px-3.5 pb-2 pt-2.5">
@@ -1398,18 +1455,21 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 // normalize fills in a graph saved before it had every field.
 function normalize(g?: RouteGraph): RouteGraph {
   return {
+    notes: g?.notes ?? [],
     nodes: (g?.nodes ?? []).map((n) => ({ ...n, values: n.values ?? [] })),
     final: g?.final ?? "proxy",
+    finalHidden: g?.finalHidden ?? false,
     layout: { final: DEFAULT_LAYOUT.final, ...(g?.layout ?? {}) },
   };
 }
 
 function posOf(g: RouteGraph, id: string): Point {
-  const n = g.nodes.find((x) => x.id === id);
+  const n = g.nodes.find((x) => x.id === id) ?? g.notes?.find(x=>x.id===id);
   return n ? { x: n.x, y: n.y } : g.layout[id] ?? { x: 0, y: 0 };
 }
 
 function moveNode(g: RouteGraph, id: string, x: number, y: number): RouteGraph {
+  if (g.notes?.some(n=>n.id===id))return {...g,notes:g.notes.map(n=>n.id===id?{...n,x,y}:n)};
   if (g.nodes.some((n) => n.id === id)) {
     return { ...g, nodes: g.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)) };
   }

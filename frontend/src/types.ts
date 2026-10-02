@@ -20,7 +20,10 @@ export type Protocol =
   | "socks"
   | "http";
 
+export interface ProfileSpeed {downloadMbps:number;bytes:number;durationMs:number;core:string;measuredAt:number}
+
 export interface Profile {
+  speed?:ProfileSpeed;
   id: string;
   name: string;
   protocol: Protocol;
@@ -107,7 +110,7 @@ export interface ProfileCores {
 }
 
 export interface RoutingRule {
-  type: "domain" | "ip" | "process";
+  type: "domain" | "ip" | "process" | "geosite" | "geoip";
   value: string;
   action: "proxy" | "direct" | "block";
   icon?: string; // process rules only: PNG data URL of the app icon
@@ -147,23 +150,35 @@ export interface Point {
   y: number;
 }
 
+export interface RouteNote {id:string;text:string;x:number;y:number}
+
 export interface RouteGraph {
+  notes?: RouteNote[];
+  finalHidden?: boolean;
   nodes: RouteNode[];
   final: RouteAction | ""; // traffic nothing matched; "" = unwired (goes through the proxy)
   layout: Record<string, Point>; // "final", "proxy", "direct", "block"
 }
 
+export interface CustomTheme { id:string; name:string; colors:Record<string,string>; accent:string }
 export interface AppSettings {
+  clientPreset?: string; clientVersion?: string;
+  customThemes?: CustomTheme[];
+  uiScale?: number;
+  density?: string;
+  customRadius?: number;
+  autoUpdate?: boolean;
   // Connection
   core: CoreSetting;
   activeProfileId: string;
   dns: string; // primary resolver, queried through the tunnel
   dnsFallback: string; // resolver for names that bypass the tunnel
   tunName: string;
-  stack: string; // "mixed" | "gvisor" | "system"
+  stack: string; // Legacy field, always empty; the core owns its native TUN stack.
   mtu: number;
   rules: RoutingRule[];
   routingMode: "simple" | "pro";
+  simpleFinal?: RouteAction;
   graph: RouteGraph;
   // Tunnel (advanced)
   ipv6: boolean;

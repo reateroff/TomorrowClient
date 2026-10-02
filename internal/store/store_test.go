@@ -34,21 +34,22 @@ func TestMigrateStackFromLegacyFile(t *testing.T) {
 	if !s.migrate() {
 		t.Fatal("migrate reported no change for a pre-v1 file")
 	}
-	if got := s.Settings().Stack; got != "mixed" {
-		t.Errorf("stack = %q, want \"mixed\"", got)
+	if got := s.Settings().Stack; got != "" {
+		t.Errorf("stack = %q, want native empty stack", got)
 	}
 	if got := s.Settings().SettingsVersion; got != model.SettingsVersion {
 		t.Errorf("version = %d, want %d", got, model.SettingsVersion)
 	}
 
-	// Running again must be a no-op, so a later deliberate gvisor pick sticks.
-	s.settings.Stack = "gvisor"
 	if s.migrate() {
-		t.Error("migrate ran a second time")
+		t.Error("second migration must be a no-op")
 	}
-	if got := s.Settings().Stack; got != "gvisor" {
-		t.Errorf("migrate overwrote a deliberate choice: stack = %q", got)
+	// Even a manually reintroduced legacy override is discarded on next load.
+	s.settings.Stack = "gvisor"
+	if !s.migrate() || s.Settings().Stack != "" {
+		t.Error("legacy stack override survived")
 	}
+
 }
 
 // A fresh install carries the current version already, so nothing may migrate.
@@ -58,8 +59,8 @@ func TestMigrateSkipsFreshInstall(t *testing.T) {
 	if s.migrate() {
 		t.Error("migrate ran on a fresh install")
 	}
-	if got := s.Settings().Stack; got != "mixed" {
-		t.Errorf("default stack = %q, want \"mixed\"", got)
+	if got := s.Settings().Stack; got != "" {
+		t.Errorf("default stack = %q, want native empty stack", got)
 	}
 }
 
@@ -127,9 +128,9 @@ func TestResetAllClearsEverything(t *testing.T) {
 	}
 }
 
-// v2 moves the stored "sing-box" — the only core there was — to auto, once.
+// Chained v2/v3 migration replaces the old default with Xray.
 // A v1 file is the realistic input: it carries a version and still migrates.
-func TestMigrateCoreToAuto(t *testing.T) {
+func TestMigrateCoreToXray(t *testing.T) {
 	dir := t.TempDir()
 	v1 := `{"settingsVersion":1,"core":"sing-box","stack":"gvisor"}`
 	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(v1), 0o644); err != nil {
@@ -141,12 +142,11 @@ func TestMigrateCoreToAuto(t *testing.T) {
 	if !s.migrate() {
 		t.Fatal("migrate reported no change for a v1 file")
 	}
-	if got := s.Settings().Core; got != model.CoreAuto {
-		t.Errorf("core = %q, want %q", got, model.CoreAuto)
+	if got := s.Settings().Core; got != model.CoreXray {
+		t.Errorf("core = %q, want %q", got, model.CoreXray)
 	}
-	// The v1 stack migration already ran for this file; gvisor is a choice now.
-	if got := s.Settings().Stack; got != "gvisor" {
-		t.Errorf("v1 migration re-ran: stack = %q", got)
+	if got := s.Settings().Stack; got != "" {
+		t.Errorf("legacy stack survived: %q", got)
 	}
 
 	// A sing-box picked after the migration is deliberate and must stick.
@@ -156,5 +156,44 @@ func TestMigrateCoreToAuto(t *testing.T) {
 	}
 	if got := s.Settings().Core; got != model.CoreSingBox {
 		t.Errorf("migrate overwrote a deliberate choice: core = %q", got)
+	}
+}
+
+func TestV3CoreMigrationPreservesExplicitChoices(t *testing.T) {
+	for _, core := range []model.Core{model.CoreAuto, model.CoreSingBox, model.CoreTodayCore, model.CoreXray, model.CoreMihomo} {
+		t.Run(string(core), func(t *testing.T) {
+			s := newTestStore(t)
+			s.settings.SettingsVersion = 2
+			s.settings.Core = core
+			s.settings.Stack = "system"
+			s.migrate()
+			want := core
+			if core == model.CoreAuto {
+				want = model.CoreXray
+			}
+			if s.Settings().Core != want || s.Settings().Stack != "" {
+				t.Fatalf("unexpected migration: %+v", s.Settings())
+			}
+			if s.migrate() {
+				t.Fatal("migration repeated")
+			}
+		})
+	}
+}
+func TestStoreRejectsLegacyStackOverrides(t *testing.T) {
+	s := newTestStore(t)
+	for _, core := range []model.Core{model.CoreAuto, model.CoreSingBox, model.CoreTodayCore, model.CoreXray, model.CoreMihomo} {
+		cfg := model.DefaultSettings()
+		cfg.Core = core
+		cfg.Stack = "gvisor"
+		if err := s.SaveSettings(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if s.Settings().Stack != "" || s.Settings().Core != core {
+			t.Fatalf("unexpected saved settings: %+v", s.Settings())
+		}
+	}
+	if model.DefaultSettings().Core != model.CoreXray {
+		t.Fatal("fresh install must default to Xray")
 	}
 }

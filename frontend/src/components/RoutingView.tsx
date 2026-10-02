@@ -1,3 +1,7 @@
+import SegmentedControl from "./SegmentedControl";
+import {tunStackInfo} from "../proto";
+import ModalPortal from "./ModalPortal";
+import RoutingTools from "./RoutingTools";
 import { useEffect, useMemo, useState } from "react";
 import {
   Split,
@@ -20,7 +24,7 @@ import { Workflow, List, SlidersHorizontal, Monitor, RefreshCw } from "lucide-re
 import { ListProcesses } from "../../wailsjs/go/main/App";
 import type { main } from "../../wailsjs/go/models";
 
-type ProcessInfo = main.ProcessInfo;
+type ProcessInfo = main.ProcessInfo & {application?:boolean;path?:string};
 
 interface Props {
   settings: AppSettings;
@@ -28,7 +32,7 @@ interface Props {
   onChange: (s: AppSettings) => void;
 }
 
-type RuleType = RoutingRule["type"];
+type RuleType = Extract<RoutingRule["type"], "domain" | "ip" | "process">;
 type RuleAction = RoutingRule["action"];
 
 const TYPES: {
@@ -91,7 +95,7 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
     let next: AppSettings = { ...settings, routingMode: mode };
     // The first switch to Pro starts from the simple rules, so nothing is lost.
     if (mode === "pro" && (settings.graph?.nodes ?? []).length === 0 && (settings.rules ?? []).length > 0) {
-      next = { ...next, graph: graphFromRules(settings.rules) };
+      next = { ...next, graph: graphFromRules(settings.rules, settings.simpleFinal ?? "proxy") };
     }
     onChange(next);
   };
@@ -121,24 +125,12 @@ export default function RoutingView({ settings, disabled, onChange }: Props) {
           >
             <SlidersHorizontal size={14} /> TUN
           </button>
-          <div className="flex rounded-lg border border-border bg-surface p-0.5">
-            {modes.map((m) => (
-              <button
-                key={m.id}
-                disabled={disabled}
-                onClick={() => setMode(m.id)}
-                className={`no-drag flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition disabled:cursor-not-allowed ${
-                  (settings.routingMode || "simple") === m.id ? "bg-surface-2 text-text" : "text-text-muted hover:text-text"
-                }`}
-              >
-                {m.icon}
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl label="Режим маршрутизации" value={settings.routingMode||"simple"} options={modes} disabled={disabled} onChange={v=>setMode(v as "simple"|"pro")}/>
+
         </div>
       </div>
 
+      <div className="px-6 pb-4"><RoutingTools settings={settings} disabled={disabled} onChange={onChange}/></div>
       <div className="relative flex min-h-0 flex-1">
         {pro ? (
           <RouteCanvas settings={settings} disabled={disabled} onChange={onChange} />
@@ -179,21 +171,7 @@ function TunPanel({
         <TunToggle label="Сниффинг" hint="Узнавать домен из TLS, HTTP и QUIC. Нужен доменным правилам и протоколам" on={s.sniff} disabled={disabled} onChange={(v) => set({ sniff: v })} />
 
         <TunField label="Сетевой стек">
-          <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-bg p-0.5">
-            {["mixed", "gvisor", "system"].map((st) => (
-              <button
-                key={st}
-                type="button"
-                disabled={disabled}
-                onClick={() => set({ stack: st })}
-                className={`rounded-md py-1.5 font-mono text-[11px] transition disabled:cursor-not-allowed ${
-                  (s.stack || "mixed") === st ? "bg-surface-2 text-text" : "text-text-muted hover:text-text"
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
+          <div className="rounded-lg border border-border bg-bg px-3 py-2 text-xs text-text-muted" aria-label="Сетевой стек закреплён за ядром">{tunStackInfo(s.core).label}<p className="mt-1 text-[10px] leading-relaxed text-text-faint">{tunStackInfo(s.core).hint}</p></div>
         </TunField>
         <TunField label="Имя адаптера">
           <input className={input} value={s.tunName} disabled={disabled} placeholder="TomorrowTun" spellCheck={false} onChange={(e) => set({ tunName: e.target.value })} />
@@ -289,7 +267,7 @@ function SimpleRouting({ settings, disabled, onChange }: Props) {
     commitRules(rules.filter((r) => r !== rule));
 
   const typeMeta = TYPES.find((t) => t.key === type)!;
-  const shown = rules.filter((r) => r.type === type);
+  const shown = rules.filter((r) => r.type === type || (type === "domain" && r.type === "geosite") || (type === "ip" && r.type === "geoip"));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -298,6 +276,10 @@ function SimpleRouting({ settings, disabled, onChange }: Props) {
       <div className="px-6">
       <div className="mx-auto w-full max-w-2xl">
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-text-faint">Остальной трафик</span>
+        <SegmentedControl disabled={disabled} label="Остальной трафик Easy" value={settings.simpleFinal || "proxy"} onChange={(simpleFinal) => !disabled && onChange({...settings,simpleFinal: simpleFinal as RuleAction})} options={[{id:"proxy",label:"Через VPN"},{id:"direct",label:"Напрямую"},{id:"block",label:"Блокировать"}]} />
+      </div>
       {/* Type tabs */}
       <div className="mb-4 grid grid-cols-3 gap-2">
         {TYPES.map((t) => (
@@ -350,7 +332,7 @@ function SimpleRouting({ settings, disabled, onChange }: Props) {
           <button
             onClick={add}
             disabled={disabled || !value.trim()}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={16} />
             Добавить
@@ -423,7 +405,7 @@ function RuleRow({
   rule: RoutingRule;
   onDelete: () => void;
 }) {
-  const t = TYPES.find((x) => x.key === rule.type);
+  const t = TYPES.find((x) => x.key === (rule.type === "geosite" ? "domain" : rule.type === "geoip" ? "ip" : rule.type));
   const a = ACTIONS.find((x) => x.key === rule.action);
   return (
     <div className="group flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3">
@@ -441,7 +423,7 @@ function RuleRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate font-mono text-sm text-text">{rule.value}</div>
-        <div className="text-xs text-text-faint">{t?.label}</div>
+        <div className="text-xs text-text-faint">{rule.type === "geosite" ? "GeoSite · готовый список сайтов" : rule.type === "geoip" ? "GeoIP · страна по IP" : t?.label}</div>
       </div>
       <span
         className={`flex items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-[11px] ${
@@ -473,6 +455,7 @@ export function ProcessPicker({
 }) {
   const [all, setAll] = useState<ProcessInfo[] | null>(null);
   const [q, setQ] = useState("");
+  const [appsOnly,setAppsOnly] = useState(true);
 
   const load = () => {
     setAll(null);
@@ -483,10 +466,11 @@ export function ProcessPicker({
   const filtered = useMemo(() => {
     if (!all) return [];
     const s = q.trim().toLowerCase();
-    return s ? all.filter((p) => p.name.toLowerCase().includes(s)) : all;
-  }, [all, q]);
+    return all.filter(p=>(!appsOnly || p.application) && (!s || p.name.toLowerCase().includes(s) || p.path?.toLowerCase().includes(s)));
+  }, [all, q, appsOnly]);
 
   return (
+    <ModalPortal onClose={onClose}>
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6 backdrop-blur-sm"
       onClick={onClose}
@@ -513,6 +497,7 @@ export function ProcessPicker({
           </button>
         </div>
 
+        <div className="mb-3 flex gap-2 text-xs"><button className="rounded-md border border-border px-3 py-2" onClick={()=>setAppsOnly(true)}>Приложения {appsOnly?"✓":""}</button><button className="rounded-md border border-border px-3 py-2" onClick={()=>setAppsOnly(false)}>Все процессы {!appsOnly?"✓":""}</button></div>
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-border bg-bg px-3 transition focus-within:border-accent/70 focus-within:ring-2 focus-within:ring-accent/20">
           <Search size={14} className="shrink-0 text-text-faint" />
           <input
@@ -559,5 +544,6 @@ export function ProcessPicker({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

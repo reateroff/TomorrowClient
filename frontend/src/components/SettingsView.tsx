@@ -1,6 +1,19 @@
+import Select from "./ClientSelect";
+import type {SelectOption} from "./ClientSelect";
+import SegmentedControl from "./SegmentedControl";
+import ColorPickerModal from "./ColorPickerModal";
+import {tunStackInfo} from "../proto";
+import ModalPortal from "./ModalPortal";
 import { useEffect, useRef, useState } from "react";
+import CustomThemes from "./CustomThemes";
+import SettingsSlider from "./SettingsSlider";
+import {ConnectionsPanel,DeveloperMonitor} from "./RuntimeMonitor";
+import {CheckUpdates} from "../backend";
+import {BrowserOpenURL} from "../../wailsjs/runtime/runtime";
 import {
   Palette,
+  Search,
+  ArrowDownToLine,
   Monitor,
   Network,
   ScrollText,
@@ -17,6 +30,8 @@ import {
   FileJson,
   Lock,
   PanelLeft,
+  PanelRight,
+  PanelBottom,
   PanelTop,
   X,
   RefreshCw,
@@ -51,10 +66,7 @@ import {
   ANIMATIONS,
   THEMES_VISIBLE,
   isHex,
-  hexToHsv,
-  hsvToHex,
 } from "../theme";
-import type { HSV } from "../theme";
 import {
   GetLogs,
   ClearLogs,
@@ -234,6 +246,7 @@ export default function SettingsView({
       <div className="px-6 pt-6">
         <div className="mx-auto mb-6 flex w-full max-w-2xl items-center gap-3">
           <button
+            aria-label="Назад в настройки"
             onClick={() => setTab(null)}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-text-muted transition hover:bg-surface-2 hover:text-text"
           >
@@ -267,7 +280,7 @@ export default function SettingsView({
         )}
         {tab === "ping" && <PingSettings settings={settings} set={set} />}
         {tab === "hwid" && <HWIDSettings settings={settings} set={set} />}
-        {tab === "logs" && <Logs />}
+        {tab === "logs" && <Logs hide={settings.demoMode} />}
         {tab === "developer" && (
           <Developer settings={settings} set={set} onApply={onChange} />
         )}
@@ -295,10 +308,11 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
           value={settings.theme}
           onChange={(id) => set({ theme: id })}
         />
+        <CustomThemes settings={settings} set={set} />
       </Section>
 
       <Section icon={<Zap size={16} />} title="Акцент">
-        <div className="flex flex-wrap gap-2.5">
+        <div className="tc-accent-palette">
           {ACCENTS.map((a) => (
             <button
               key={a.id}
@@ -315,7 +329,7 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
                 style={{ background: a.color }}
               >
                 {settings.accent === a.id && (
-                  <Check size={13} className="text-bg" strokeWidth={3} />
+                  <Check size={13} className="text-on-accent" strokeWidth={3} />
                 )}
               </span>
             </button>
@@ -329,6 +343,13 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
         />
       </Section>
 
+      <Section icon={<Settings2 size={16} />} title="Масштаб и плотность">
+        <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface px-4 py-3">
+          <SettingsSlider label="Масштаб интерфейса" min={85} max={120} step={1} value={settings.uiScale??100} unit="%" onCommit={uiScale=>set({uiScale})}/>
+          <p className="text-[11px] text-text-faint">Применяется после отпускания ползунка — элементы не смещаются во время выбора.</p>
+          <div className="flex items-center justify-between gap-4"><span className="text-xs text-text-muted">Плотность</span><SegmentedControl label="Плотность интерфейса" value={settings.density??"comfortable"} options={[{id:"comfortable",label:"Просторный"},{id:"compact",label:"Компактный"}]} onChange={density=>set({density})}/></div>
+        </div>
+      </Section>
       <Section icon={<Monitor size={16} />} title="Шрифт">
         <div className="grid grid-cols-2 gap-3">
           {FONTS.map((f) => (
@@ -382,13 +403,15 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
             </button>
           ))}
         </div>
+        <div className="mt-3"><SettingsSlider label="Свой радиус" min={0} max={32} step={1} unit=" px" value={settings.radius==="custom"?settings.customRadius??14:parseFloat(RADII.find(r=>r.id===settings.radius)?.value??"14")} onCommit={customRadius=>set({radius:"custom",customRadius})}/></div>
       </Section>
 
       <Section icon={<Sparkles size={16} />} title="Анимации">
         <AnimationPicker
-          value={settings.animation || "rise"}
+          value={settings.animation || "fade"}
           onChange={(id) => set({ animation: id })}
         />
+        <p className="mt-3 text-[11px] leading-relaxed text-text-faint">Проигрывается сразу при выборе.</p>
       </Section>
 
       <Section icon={<PanelLeft size={16} />} title="Расположение вкладок">
@@ -405,6 +428,8 @@ function Appearance({ settings, set }: { settings: AppSettings; set: SetFn }) {
             title="Сверху"
             onClick={() => set({ navPosition: "top" })}
           />
+          <NavPosCard active={settings.navPosition==="right"} icon={<PanelRight size={18}/>} title="Справа" onClick={()=>set({navPosition:"right"})}/>
+          <NavPosCard active={settings.navPosition==="bottom"} icon={<PanelBottom size={18}/>} title="Снизу" onClick={()=>set({navPosition:"bottom"})}/>
         </div>
       </Section>
     </div>
@@ -476,8 +501,8 @@ function ThemePicker({
   );
 }
 
-// AnimationPicker lists the entrance presets. No preview tile: the choice is
-// visible on the next screen change anyway, and the user asked for it gone.
+// Replay the actual section instead of adding a separate preview tile.
+// Replay also works when clicking the already selected preset.
 function AnimationPicker({
   value,
   onChange,
@@ -490,7 +515,16 @@ function AnimationPicker({
       {ANIMATIONS.map((a) => (
         <button
           key={a.id}
-          onClick={() => onChange(a.id)}
+          onClick={(event) => {
+            const screen = event.currentTarget.closest<HTMLElement>(".animate-view");
+            onChange(a.id);
+            requestAnimationFrame(() => screen?.getAnimations().forEach(animation => {
+              if (animation instanceof CSSAnimation && animation.animationName.startsWith("anim-")) {
+                animation.currentTime = 0;
+                animation.play();
+              }
+            }));
+          }}
           className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left transition ${
             value === a.id
               ? "border-accent/60 bg-surface-2 text-text"
@@ -589,247 +623,12 @@ function CustomAccent({
   );
 }
 
-// clamp01 keeps a normalised drag position inside the control.
-const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
-
-// ColorPickerModal is a self-contained picker drawn in the app's own language:
-// a saturation/value field, a hue rail, a hex field and quick shades. It
-// deliberately avoids <input type="color">, whose popup is the browser's own
-// widget and looks nothing like the rest of the client.
-function ColorPickerModal({
-  initial,
-  saved,
-  onClose,
-  onApply,
-  onSave,
-  onRemove,
-}: {
-  initial: string;
-  saved: string[];
-  onClose: () => void;
-  onApply: (hex: string) => void;
-  onSave: (hex: string) => void;
-  onRemove: (hex: string) => void;
-}) {
-  // HSV is authoritative while picking; hex is derived. Going through hex on
-  // every drag would lose the hue as soon as the value reached black or white.
-  const [hsv, setHsv] = useState(
-    () => hexToHsv(initial) ?? { h: 230, s: 0.45, v: 1 }
-  );
-  const [text, setText] = useState(initial.toLowerCase());
-
-  const hex = hsvToHex(hsv.h, hsv.s, hsv.v);
-  const typedValid = isHex(text);
-  const alreadySaved = saved.includes(hex.toLowerCase());
-
-  const svRef = useRef<HTMLDivElement>(null);
-  const hueRef = useRef<HTMLDivElement>(null);
-
-  // Committing through here keeps the hex field in step with the handles.
-  const commit = (next: HSV) => {
-    setHsv(next);
-    setText(hsvToHex(next.h, next.s, next.v));
-  };
-
-  const pickFromHex = (v: string) => {
-    setText(v);
-    const parsed = hexToHsv(v);
-    if (parsed) setHsv(parsed);
-  };
-
-  // Pointer capture means a drag that leaves the control still tracks.
-  const drag =
-    (
-      ref: React.RefObject<HTMLDivElement | null>,
-      apply: (x: number, y: number) => void
-    ) =>
-    (e: React.PointerEvent) => {
-      if (e.type === "pointermove" && e.buttons !== 1) return;
-      const el = ref.current;
-      if (!el) return;
-      if (e.type === "pointerdown") {
-        el.setPointerCapture(e.pointerId);
-      }
-      const r = el.getBoundingClientRect();
-      apply(
-        clamp01((e.clientX - r.left) / r.width),
-        clamp01((e.clientY - r.top) / r.height)
-      );
-    };
-
-  const onSV = drag(svRef, (x, y) => commit({ ...hsv, s: x, v: 1 - y }));
-  const onHue = drag(hueRef, (x) => commit({ ...hsv, h: x * 360 }));
-
-  // Chromium ships an eyedropper; offer it only where it actually exists.
-  const eyeDropper = (window as any).EyeDropper;
-  const pickFromScreen = async () => {
-    try {
-      const res = await new eyeDropper().open();
-      if (res?.sRGBHex) pickFromHex(res.sRGBHex);
-    } catch {
-      /* the user dismissed the eyedropper */
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-6 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="animate-view w-full max-w-xs rounded-xl border border-border bg-surface p-4 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-text">Цвет акцента</h2>
-          <button
-            onClick={onClose}
-            className="no-drag text-text-faint transition hover:text-text"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Saturation (x) × value (y) over the current hue */}
-        <div
-          ref={svRef}
-          onPointerDown={onSV}
-          onPointerMove={onSV}
-          className="relative mb-3 h-40 w-full cursor-crosshair touch-none overflow-hidden rounded-lg border border-border"
-          style={{
-            background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))`,
-          }}
-        >
-          <span
-            className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
-            style={{
-              left: `${hsv.s * 100}%`,
-              top: `${(1 - hsv.v) * 100}%`,
-              background: hex,
-            }}
-          />
-        </div>
-
-        {/* Hue rail */}
-        <div
-          ref={hueRef}
-          onPointerDown={onHue}
-          onPointerMove={onHue}
-          className="relative mb-3 h-3 w-full cursor-pointer touch-none rounded-full border border-border"
-          style={{
-            background:
-              "linear-gradient(to right,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%)",
-          }}
-        >
-          <span
-            className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
-            style={{
-              left: `${(hsv.h / 360) * 100}%`,
-              background: `hsl(${hsv.h} 100% 50%)`,
-            }}
-          />
-        </div>
-
-        {/* Swatch + hex + eyedropper */}
-        <div className="mb-3 flex items-center gap-2">
-          <span
-            className="h-9 w-9 shrink-0 rounded-lg border border-border"
-            style={{ background: hex }}
-          />
-          <input
-            value={text}
-            onChange={(e) => pickFromHex(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && typedValid && onApply(hex)}
-            placeholder="#ffffff"
-            spellCheck={false}
-            className={`min-w-0 flex-1 rounded-lg border bg-bg px-3 py-2 font-mono text-sm text-text outline-none transition placeholder:text-text-faint focus:border-accent/60 ${
-              text.length > 1 && !typedValid ? "border-danger/50" : "border-border"
-            }`}
-          />
-          {eyeDropper && (
-            <button
-              onClick={pickFromScreen}
-              title="Взять цвет с экрана"
-              className="shrink-0 rounded-lg border border-border p-2 text-text-faint transition hover:bg-surface-2 hover:text-text"
-            >
-              <Pipette size={15} />
-            </button>
-          )}
-        </div>
-
-        {/* The user's own palette. The ready-made shades that used to sit here
-            were the accent palette again, one screen up. */}
-        <div className="mb-4">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="font-mono text-[11px] uppercase tracking-wide text-text-faint">
-              Сохранённые
-            </span>
-            <button
-              onClick={() => onSave(hex)}
-              disabled={alreadySaved}
-              title={alreadySaved ? "Уже сохранён" : "Сохранить текущий цвет"}
-              className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-text-muted transition hover:bg-surface-2 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {alreadySaved ? <Check size={11} /> : <Plus size={11} />}
-              {alreadySaved ? "Сохранён" : "Сохранить"}
-            </button>
-          </div>
-
-          {saved.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-3 py-2.5 text-center text-[11px] text-text-faint">
-              Пока пусто — подберите цвет и нажмите «Сохранить»
-            </div>
-          ) : (
-            <div className="grid grid-cols-8 gap-1.5">
-              {saved.map((c) => (
-                <div key={c} className="group relative">
-                  <button
-                    onClick={() => pickFromHex(c)}
-                    title={c}
-                    className={`h-6 w-full rounded-md border transition ${
-                      hex.toLowerCase() === c
-                        ? "border-text"
-                        : "border-transparent hover:border-border"
-                    }`}
-                    style={{ background: c }}
-                  />
-                  <button
-                    onClick={() => onRemove(c)}
-                    title="Убрать"
-                    className="absolute -right-1 -top-1 hidden h-3.5 w-3.5 place-items-center rounded-full border border-border bg-surface text-text-faint transition hover:text-danger group-hover:grid"
-                  >
-                    <X size={8} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-lg border border-border py-2 text-sm text-text-muted transition hover:bg-surface-2"
-          >
-            Отмена
-          </button>
-          <button
-            onClick={() => onApply(hex)}
-            className="flex-1 rounded-lg bg-accent py-2 text-sm font-medium text-bg transition hover:bg-accent-soft"
-          >
-            Применить
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* -------------------------------- Application -------------------------------- */
 
 function Application({ settings, set }: { settings: AppSettings; set: SetFn }) {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4"><div><div className="text-sm">Автозагрузка обновлений</div><div className="text-[11px] text-text-faint">GitHub проверяется раз в 6 часов. Установка — вручную.</div></div><Toggle checked={settings.autoUpdate ?? true} onChange={v=>set({autoUpdate:v})}/></div>
       {/* Same single-card layout as the Connection screen so the two settings
           pages read as one system. */}
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
@@ -940,7 +739,7 @@ function Connection({
           }
         >
           <Select
-            value={settings.core || "auto"}
+            value={settings.core || "xray"}
             disabled={disabled}
             onChange={(v) => set({ core: v as AppSettings["core"] })}
             options={coreOptions}
@@ -960,13 +759,8 @@ function Connection({
           />
         </Row>
 
-        <Row label="Сетевой стек" hint="Как туннель обрабатывает пакеты TUN">
-          <Select
-            value={settings.stack || "mixed"}
-            disabled={disabled}
-            onChange={(v) => set({ stack: v })}
-            options={STACKS}
-          />
+        <Row label="Сетевой стек" hint={tunStackInfo(settings.core).hint}>
+          <div className="flex max-w-52 items-center gap-2 text-right text-xs text-text-muted" aria-label="Сетевой стек закреплён за ядром"><Lock size={13} className="shrink-0 text-text-faint"/>{tunStackInfo(settings.core).label}</div>
         </Row>
 
         <Row label="MTU" hint="0 — значение ядра по умолчанию">
@@ -1008,13 +802,6 @@ function Connection({
   );
 }
 
-// STACKS are the TUN network stacks sing-box accepts.
-const STACKS: SelectOption[] = [
-  { id: "gvisor", label: "gvisor", hint: "Пользовательский стек, надёжнее" },
-  { id: "mixed", label: "mixed", hint: "gvisor для TCP, system для UDP" },
-  { id: "system", label: "system", hint: "Системный стек, быстрее" },
-];
-
 // Row is one label/control line inside a settings card.
 function Row({
   label,
@@ -1032,106 +819,6 @@ function Row({
         {hint && <div className="text-xs text-text-faint">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-export interface SelectOption {
-  id: string;
-  label: string;
-  hint?: string;
-}
-
-// Select is a small dropdown: the trigger shows the current value and its
-// chevron rotates while a compact menu is open. Built by hand rather than with
-// <select>, whose popup is drawn by the OS and ignores the app's theme.
-function Select({
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  options: SelectOption[];
-  disabled?: boolean;
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = options.find((o) => o.id === value) ?? options[0];
-
-  // Dismiss on an outside click or Escape, the way a native menu behaves.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  // A disabled control must not be left hanging open.
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className={`flex w-44 items-center justify-between gap-2 rounded-lg border bg-bg px-3 py-2 font-mono text-sm text-text transition disabled:cursor-not-allowed disabled:opacity-60 ${
-          open ? "border-accent/60" : "border-border hover:border-text-faint"
-        }`}
-      >
-        {current.label}
-        <ChevronDown
-          size={14}
-          className={`shrink-0 text-text-faint transition-transform duration-200 ${
-            open ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-
-      {open && (
-        <div className="animate-pop absolute right-0 z-30 mt-1.5 w-56 overflow-hidden rounded-lg border border-border bg-surface-2 shadow-xl">
-          {options.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => {
-                onChange(o.id);
-                setOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface"
-            >
-              <span className="min-w-0 flex-1">
-                <span
-                  className={`block font-mono text-sm ${
-                    o.id === value ? "text-text" : "text-text-muted"
-                  }`}
-                >
-                  {o.label}
-                </span>
-                {o.hint && (
-                  <span className="block text-[11px] text-text-faint">
-                    {o.hint}
-                  </span>
-                )}
-              </span>
-              {o.id === value && (
-                <Check size={14} className="shrink-0 text-accent" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1248,16 +935,7 @@ function PingSettings({ settings, set }: { settings: AppSettings; set: SetFn }) 
 
       <Section icon={<Timer size={16} />} title="Таймаут">
         <div className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
-          <input
-            type="range"
-            min={1000}
-            max={15000}
-            step={500}
-            value={timeout}
-            onChange={(e) => set({ pingTimeout: parseInt(e.target.value) })}
-            className="flex-1 accent-[var(--color-accent)]"
-          />
-          <span className="w-16 text-right font-mono text-sm text-text">{(timeout / 1000).toFixed(1)} с</span>
+          <div className="w-full"><SettingsSlider label="Таймаут" min={1000} max={15000} step={100} value={timeout} format={value=>(value/1000).toFixed(1)+" с"} onCommit={pingTimeout=>set({pingTimeout})}/></div>
         </div>
       </Section>
     </div>
@@ -1276,12 +954,11 @@ interface DeviceInfo {
 
 // Whole-system disguises: every field a panel reads, set to something that
 // belongs together.
-const DEVICE_PRESETS: { label: string; os: string; osVersion: string; model: string; ua: string }[] = [
-  { label: "Windows", os: "Windows", osVersion: "10.0.26100", model: "Desktop PC", ua: "v2rayN/7.13.8" },
-  { label: "macOS", os: "macOS", osVersion: "15.5", model: "MacBookPro18,3", ua: "Happ/2.9.0" },
-  { label: "Linux", os: "Linux", osVersion: "6.8.0", model: "x86_64", ua: "sing-box/1.12.0" },
-  { label: "Android", os: "Android", osVersion: "15", model: "Pixel 9", ua: "v2rayNG/1.10.16" },
-  { label: "iOS", os: "iOS", osVersion: "18.5", model: "iPhone17,1", ua: "Happ/2.9.0" },
+// UA templates, not fake hardware fingerprints. Versions are supplied explicitly.
+const DEVICE_PRESETS=[
+ {id:"incy",version:"3.8.8",label:"INCY",ua:(v:string)=>`INCY/${v}/Windows`,source:"https://github.com/INCY-DEV/incy-docs/blob/main/ru/dev-docs/subscription-format.en.md",hint:"Документированные заголовки INCY; HWID вычисляется по опубликованному Windows-алгоритму."},
+ {id:"throne",version:"1.3.2",label:"Throne",ua:(v:string)=>`Throne/${v}`,source:"https://github.com/throneproj/Throne/blob/dev/src/database/SettingsRepo.cpp",hint:"Формат User-Agent из исходников Throne. Реальные ОС и модель сохраняются."},
+ {id:"happ",version:"4.3.0",label:"Happ · шаблон",ua:(v:string)=>`Happ/${v}`,source:"https://www.happ.su/main/dev-docs/app-management",hint:"Шаблон совместимости User-Agent. Точный HWID Happ и закрытый формат клиента не подтверждены; используйте HWID, выданный вашей панелью."},
 ];
 
 const randomHWID = () =>
@@ -1292,6 +969,10 @@ const randomHWID = () =>
 function HWIDSettings({ settings, set }: { settings: AppSettings; set: SetFn }) {
   const [real, setReal] = useState<DeviceInfo | null>(null);
   const [headers, setHeaders] = useState<Record<string, string>>({});
+  const [clientVersion,setClientVersion]=useState(settings.clientVersion || DEVICE_PRESETS.find(p=>p.id===settings.clientPreset)?.version || "");
+  useEffect(()=>setClientVersion(settings.clientVersion || DEVICE_PRESETS.find(p=>p.id===settings.clientPreset)?.version || ""),[settings.clientPreset,settings.clientVersion]);
+  const validVersion=(v:string)=>/^\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9]+)*$/.test(v);
+  const applyPreset=(p:typeof DEVICE_PRESETS[number])=>{const v=settings.clientPreset===p.id&&validVersion(clientVersion)?clientVersion:p.version;setClientVersion(v);set({clientPreset:p.id,clientVersion:v,hwidEnabled:true,hwid:"",deviceOs:"",osVersion:"",deviceModel:"",userAgent:p.ua(v)})};
 
   useEffect(() => {
     GetDeviceInfo().then((d) => setReal(d as DeviceInfo));
@@ -1300,7 +981,7 @@ function HWIDSettings({ settings, set }: { settings: AppSettings; set: SetFn }) 
   useEffect(() => {
     const t = setTimeout(() => SubscriptionHeaders().then((h) => setHeaders(h ?? {})), 150);
     return () => clearTimeout(t);
-  }, [settings.hwidEnabled, settings.hwid, settings.deviceOs, settings.osVersion, settings.deviceModel, settings.userAgent]);
+  }, [settings.hwidEnabled, settings.hwid, settings.deviceOs, settings.osVersion, settings.deviceModel, settings.userAgent,settings.clientPreset,settings.clientVersion]);
 
   const on = settings.hwidEnabled;
   const spoofed = !!(settings.hwid || settings.deviceOs || settings.osVersion || settings.deviceModel || settings.userAgent);
@@ -1383,38 +1064,15 @@ function HWIDSettings({ settings, set }: { settings: AppSettings; set: SetFn }) 
         </div>
       </Section>
 
-      <Section icon={<Shuffle size={16} />} title="Подменить систему целиком">
-        <div className="flex flex-wrap gap-1.5">
-          {DEVICE_PRESETS.map((p) => (
-            <button
-              key={p.label}
-              onClick={() =>
-                set({
-                  hwidEnabled: true,
-                  hwid: settings.hwid || randomHWID(),
-                  deviceOs: p.os,
-                  osVersion: p.osVersion,
-                  deviceModel: p.model,
-                  userAgent: p.ua,
-                })
-              }
-              className={`no-drag rounded-lg border px-3 py-1.5 text-xs transition ${
-                settings.deviceOs === p.os && settings.deviceModel === p.model
-                  ? "border-accent/60 bg-surface-2 text-text"
-                  : "border-border text-text-muted hover:text-text"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            disabled={!spoofed}
-            onClick={() => set({ hwid: "", deviceOs: "", osVersion: "", deviceModel: "", userAgent: "" })}
-            className="no-drag rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted transition hover:text-text disabled:opacity-40"
-          >
-            Настоящие значения
-          </button>
+      <Section icon={<Shuffle size={16} />} title="Пресеты клиентов">
+        <div className="flex flex-wrap gap-2">
+          {DEVICE_PRESETS.map(p=><button key={p.id} title={p.hint} className={`no-drag rounded-lg border px-3 py-2 text-xs transition hover:bg-surface-2 ${settings.clientPreset===p.id?"border-accent/50 bg-surface-2 text-text":"border-border bg-surface text-text-muted"}`} onClick={()=>applyPreset(p)}>{p.id==="happ"?"Happ*":p.label}<span className="ml-1.5 font-mono text-[10px] text-text-faint">{settings.clientPreset===p.id?settings.clientVersion||p.version:p.version}</span></button>)}
+          <button className={`rounded-lg border px-3 py-2 text-xs transition hover:bg-surface-2 ${!settings.clientPreset?"border-accent/50 bg-surface-2 text-text":"border-border bg-surface text-text-muted"}`} onClick={()=>{setClientVersion("");set({clientPreset:"",clientVersion:"",hwid:"",deviceOs:"",osVersion:"",deviceModel:"",userAgent:""})}}>TomorrowClient</button>
         </div>
+        {settings.clientPreset&&<div className="mt-3 flex flex-wrap items-center gap-3"><span className="shrink-0 text-xs text-text-faint">Версия клиента</span><input aria-label="Версия клиента" className={`${input} max-w-36`} value={clientVersion} onChange={e=>setClientVersion(e.target.value)} placeholder={DEVICE_PRESETS.find(p=>p.id===settings.clientPreset)?.version}/><button disabled={!validVersion(clientVersion)} className="rounded-lg border border-border px-3 py-2 text-xs text-text-muted transition hover:bg-surface-2 disabled:opacity-40" onClick={()=>{const p=DEVICE_PRESETS.find(p=>p.id===settings.clientPreset);if(p)set({clientVersion,userAgent:p.ua(clientVersion)})}}>Применить версию</button></div>}
+        <p className="mt-2 text-[11px] text-text-faint">На кнопках — версии desktop-релизов. После выбора можно указать свою версию.</p>
+        <p className="mt-2 text-[11px] text-text-faint">* Happ — шаблон совместимости. ОС и HWID не рандомизируются.</p>
+        <details className="mt-2 text-[11px] text-text-faint"><summary className="cursor-pointer hover:text-text-muted">О форматах пресетов</summary><div className="mt-2 flex flex-col gap-2">{DEVICE_PRESETS.map(p=><p key={p.id}>{p.hint} <button className="text-accent" onClick={()=>BrowserOpenURL(p.source)}>Источник ↗</button></p>)}</div></details>
       </Section>
 
       <Section icon={<FileJson size={16} />} title="Что уйдёт в запросе подписки">
@@ -1435,74 +1093,32 @@ function HWIDSettings({ settings, set }: { settings: AppSettings; set: SetFn }) 
 
 /* ----------------------------------- Logs ------------------------------------ */
 
-function Logs() {
-  const [lines, setLines] = useState<string[]>([]);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    GetLogs().then((l) => setLines((l as string[]) ?? []));
-    const off = EventsOn("vpn:log", (line: string) =>
-      setLines((prev) => [...prev.slice(-499), line])
-    );
-    return () => off();
-  }, []);
-
-  // Auto-scroll to the newest line.
-  useEffect(() => {
-    const el = boxRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
-
-  const copyAll = async () => {
-    await navigator.clipboard.writeText(lines.join("\n"));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  const clear = async () => {
-    await ClearLogs();
-    setLines([]);
-  };
-
-  return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col gap-3">
-      <div className="flex items-center justify-end gap-2">
-        <button
-          onClick={copyAll}
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-muted transition hover:bg-surface-2 hover:text-text"
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? "Скопировано" : "Копировать"}
-        </button>
-        <button
-          onClick={clear}
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-muted transition hover:bg-surface-2 hover:text-danger"
-        >
-          <Trash2 size={13} />
-          Очистить
-        </button>
-      </div>
-      <div
-        ref={boxRef}
-        className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-bg p-3 font-mono text-xs leading-relaxed"
-      >
-        {lines.length === 0 ? (
-          <span className="text-text-faint">
-            Логов пока нет. Подключитесь, чтобы увидеть вывод ядра.
-          </span>
-        ) : (
-          lines.map((l, i) => (
-            <div
-              key={i}
-              className="whitespace-pre-wrap break-all text-text-muted"
-            >
-              {l}
-            </div>
-          ))
-        )}
-      </div>
+function Logs({hide=false}:{hide?:boolean}) {
+  const [tab,setTab]=useState('logs'),[lines,setLines]=useState<string[]>([]),[level,setLevel]=useState('all'),[query,setQuery]=useState(''),[search,setSearch]=useState(false),[autoScroll,setAutoScroll]=useState(true),[copied,setCopied]=useState(false);
+  const boxRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{let alive=true;GetLogs().then(l=>{if(alive)setLines((l??[]).slice(-500))}).catch(e=>push(String(e),'error'));const off=EventsOn('vpn:log',(line:string)=>setLines(prev=>[...prev.slice(-499),line]));return()=>{alive=false;off()}},[]);
+  useEffect(()=>{if(autoScroll&&tab==='logs'&&boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight},[lines,autoScroll,tab]);
+  const severity=(line:string)=>{const m=line.slice(0,150).match(/\b(ERROR|ERR|FATAL|WARN|WARNING|INFO|DEBUG|TRACE)\b/i)?.[1]?.toUpperCase();return m==='ERR'||m==='FATAL'?'ERROR':m==='WARNING'?'WARN':m==='TRACE'?'DEBUG':m||'INFO'};
+  const visible=lines.filter(line=>(level==='all'||severity(line)===level)&&line.toLowerCase().includes(query.toLowerCase()));
+  const copy=async()=>{try{await navigator.clipboard.writeText(visible.join('\n'));setCopied(true);setTimeout(()=>setCopied(false),1500)}catch(e){push(String(e),'error')}};
+  const clear=async()=>{try{await ClearLogs();setLines([])}catch(e){push(String(e),'error')}};
+  const iconButton='no-drag grid h-8 w-8 shrink-0 place-items-center rounded-md text-text-muted transition hover:bg-surface-2 hover:text-text';
+  return <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-surface">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+      <SegmentedControl label="Раздел журнала" value={tab} onChange={setTab} options={[{id:'logs',label:'Логи'},{id:'connections',label:'Соединения'}]}/>
+      {tab==='logs'&&<div className="flex items-center gap-2">
+        <Select label="Уровень логов" value={level} options={[{id:'all',label:'Все'},{id:'INFO',label:'Info'},{id:'WARN',label:'Warn'},{id:'ERROR',label:'Error'},{id:'DEBUG',label:'Debug'}]} onChange={setLevel} className="h-8 w-24 py-0"/>
+        <div className="flex items-center gap-0.5"><button className={iconButton} title="Поиск в логах" aria-label="Поиск в логах" onClick={()=>setSearch(v=>!v)}><Search size={14}/></button><button className={`${iconButton} ${autoScroll?'!text-accent':''}`} title={autoScroll?'Отключить автопрокрутку':'Включить автопрокрутку'} aria-label="Автопрокрутка" aria-pressed={autoScroll} onClick={()=>setAutoScroll(v=>!v)}><ArrowDownToLine size={14}/></button><button className={iconButton} title="Копировать видимые логи" aria-label="Копировать логи" onClick={copy}>{copied?<Check size={14}/>:<Copy size={14}/>}</button><button className={`${iconButton} hover:!text-danger`} title="Очистить логи" aria-label="Очистить логи" onClick={clear}><Trash2 size={14}/></button></div>
+      </div>}
     </div>
-  );
+    {tab==='logs'?<>
+      {search&&<div className="flex items-center gap-2 border-b border-border px-3 py-2"><Search size={13} className="text-text-faint"/><input autoFocus aria-label="Фильтр логов" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Найти в логах…" className="min-w-0 flex-1 bg-transparent text-xs text-text outline-none"/><button aria-label="Закрыть поиск" onClick={()=>{setSearch(false);setQuery('')}} className="text-text-faint hover:text-text"><X size={13}/></button></div>}
+      <div ref={boxRef} className="min-h-0 flex-1 overflow-auto bg-bg font-mono text-[11px] leading-relaxed">
+        {hide?<div className="p-5 text-text-faint">Логи скрыты в демо-режиме.</div>:visible.length?visible.map((line,i)=><div key={i} className="flex items-start gap-3 border-b border-border-soft/50 px-3 py-2 hover:bg-surface/60"><span className={`mt-0.5 w-10 shrink-0 text-[10px] ${severity(line)==='ERROR'?'text-danger':severity(line)==='WARN'?'text-amber':severity(line)==='DEBUG'?'text-text-faint':'text-accent'}`}>{severity(line)}</span><span className="min-w-0 whitespace-pre-wrap break-all text-text-muted">{line}</span></div>):<div className="flex h-full min-h-24 items-center justify-center px-6 text-center text-xs text-text-faint">{lines.length?'Нет строк по выбранному фильтру':'Логов пока нет. Подключитесь, чтобы увидеть вывод ядра.'}</div>}
+      </div>
+      <div className="flex items-center justify-between border-t border-border px-3 py-2 font-mono text-[10px] text-text-faint"><span>{visible.length} / {lines.length} строк</span><span>{autoScroll?'Автопрокрутка':'Просмотр'} · последние 500</span></div>
+    </>:<ConnectionsPanel hide={hide}/>}
+  </div>;
 }
 
 /* --------------------------------- Developer --------------------------------- */
@@ -1521,6 +1137,7 @@ function Developer({
       {/* Every one of these dumps carries server addresses, uuids or passwords
           in plain text, so demo mode replaces them outright rather than trying
           to redact JSON field by field. */}
+      <DeveloperMonitor hide={settings.demoMode} />
       <ActiveProfileDump hide={settings.demoMode} />
       <CoreConfig core={settings.core} hide={settings.demoMode} />
       <SettingsDump hide={settings.demoMode} />
@@ -1966,7 +1583,7 @@ function ToolButton({
   disabled?: boolean;
 }) {
   const tone = primary
-    ? "bg-accent text-bg hover:bg-accent-soft"
+    ? "bg-accent text-on-accent hover:bg-accent-soft"
     : danger
     ? "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20"
     : "border border-border bg-surface text-text-muted hover:bg-surface-2 hover:text-text";
@@ -2023,6 +1640,7 @@ function About({
   const [taps, setTaps] = useState(0);
   const cores = useCores();
   const left = TAPS_TO_UNLOCK - taps;
+  const repo:Record<string,string>={"sing-box":"https://github.com/SagerNet/sing-box",todaycore:"https://github.com/TumGovic/TodayCore",xray:"https://github.com/XTLS/Xray-core",mihomo:"https://github.com/MetaCubeX/mihomo"};
 
   const tap = () => {
     if (devMode) return;
@@ -2092,15 +1710,17 @@ function About({
           {cores.length > 0 && (
             <div className="mx-auto grid w-full max-w-md grid-cols-2 gap-1.5">
               {cores.map((c) => (
-                <div
+                <button
+                  onClick={()=>BrowserOpenURL(repo[c.id])}
+                  title="Открыть репозиторий GitHub"
                   key={c.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-border bg-bg px-2.5 py-1.5"
+                  className="no-drag flex items-center justify-between gap-2 rounded-md border border-border bg-bg px-2.5 py-1.5 transition hover:border-accent"
                 >
                   <span className="text-xs text-text-muted">{c.name}</span>
                   <span className="truncate font-mono text-[11px] text-text-faint">
                     {c.version || "—"}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -2120,6 +1740,8 @@ function About({
       </div>
 
       <div className="flex flex-col items-center gap-1 font-mono text-[11px] text-text-faint">
+        <button className="no-drag text-accent hover:underline" onClick={()=>BrowserOpenURL("https://github.com/reateroff/TomorrowClient")}>TomorrowClient на GitHub ↗</button>
+        <button className="no-drag text-text-muted hover:text-text" onClick={async()=>{try{const u=await CheckUpdates();push(u.available?`Доступна ${u.version}`:"Установлена актуальная версия","info")}catch(e){push(String(e),"error")}}}>Проверить обновления</button>
         <span>{appInfo?.copyright ?? "© TomorrowClient"}</span>
         {appInfo?.license && (
           <span>

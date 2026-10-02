@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ConnectionView from "./components/ConnectionView";
@@ -42,15 +42,16 @@ const emptyStatus: Status = {
 };
 
 const defaultSettings: AppSettings = {
-  core: "auto",
+  core: "xray",
   activeProfileId: "",
   dns: "1.1.1.1",
   dnsFallback: "8.8.8.8",
   tunName: "TomorrowTun",
-  stack: "mixed",
+  stack: "",
   mtu: 0,
   rules: [],
   routingMode: "simple",
+  simpleFinal: "proxy",
   graph: { nodes: [], final: "proxy", layout: {} },
   ipv6: false,
   strictRoute: true,
@@ -69,13 +70,13 @@ const defaultSettings: AppSettings = {
   minimizeToTray: false,
   devMode: false,
   demoMode: false,
-  theme: "graphite",
-  accent: "indigo",
+  theme: "smoke",
+  accent: "sunset-mist",
   savedColors: [],
-  font: "inter",
+  font: "rubik",
   radius: "soft",
-  navPosition: "left",
-  animation: "rise",
+  navPosition: "top",
+  animation: "fade",
 };
 
 export default function App() {
@@ -85,6 +86,9 @@ export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [status, setStatus] = useState<Status>(emptyStatus);
+  const pendingSettings=useRef<AppSettings|null>(null),settingsTimer=useRef<ReturnType<typeof setTimeout>|null>(null),saveQueue=useRef<Promise<unknown>>(Promise.resolve());
+  const persistSettings=useCallback((next:AppSettings)=>{pendingSettings.current=next;if(settingsTimer.current)clearTimeout(settingsTimer.current);settingsTimer.current=setTimeout(()=>{const latest=pendingSettings.current;pendingSettings.current=null;if(latest)saveQueue.current=saveQueue.current.catch(()=>{}).then(()=>SaveSettings(latest as any)).catch(e=>push(`Не удалось сохранить настройки: ${String(e)}`,"error"))},100)},[]);
+  const flushSettings=useCallback(async()=>{if(settingsTimer.current)clearTimeout(settingsTimer.current);const latest=pendingSettings.current;pendingSettings.current=null;if(latest)saveQueue.current=saveQueue.current.catch(()=>{}).then(()=>SaveSettings(latest as any));await saveQueue.current},[]);
   // Which profile group is open in the Configs tab ("manual" or a sub id).
   const [selectedGroup, setSelectedGroup] = useState<string>("");
 
@@ -114,6 +118,7 @@ export default function App() {
     // A factory reset wipes the store behind our back, so reload everything
     // instead of leaving deleted servers on screen.
     const offReset = EventsOn("app:datareset", () => {
+      if(settingsTimer.current)clearTimeout(settingsTimer.current);pendingSettings.current=null;
       setProfiles([]);
       setSubscriptions([]);
       setSelectedGroup("");
@@ -147,6 +152,7 @@ export default function App() {
 
   const handleImport = useCallback(
     async (raw: string) => {
+      await flushSettings();
       const added = ((await ImportLinks(raw)) as Profile[]) ?? [];
       await refreshProfiles();
       if (added.length > 1) push(`Добавлено серверов: ${added.length}`, "ok");
@@ -157,15 +163,18 @@ export default function App() {
         await SaveSettings(next as any);
       }
     },
-    [refreshProfiles, settings]
+    [refreshProfiles, settings,flushSettings]
   );
 
   const handleDelete = useCallback(
     async (id: string) => {
+      if(settings.activeProfileId===id && status.state!=="disconnected" && status.state!=="error")throw new Error("Сначала отключите активное соединение");
+      await flushSettings();
       await DeleteProfile(id);
       await refreshProfiles();
+      if(settings.activeProfileId===id){const next={...settings,activeProfileId:""};setSettings(next);await SaveSettings(next as any)}
     },
-    [refreshProfiles]
+    [refreshProfiles,settings,status.state,flushSettings]
   );
 
   const handleAddSub = useCallback(
@@ -209,52 +218,56 @@ export default function App() {
 
   const handleActivate = useCallback(
     async (id: string) => {
+      await flushSettings();
       const next = { ...settings, activeProfileId: id };
       setSettings(next);
       await SaveSettings(next as any);
     },
-    [settings]
+    [settings,flushSettings]
   );
 
-  const handleSettings = useCallback(async (next: AppSettings) => {
+  const handleSettings = useCallback((next: AppSettings) => {
     setSettings(next);
     applyTheme(next);
-    await SaveSettings(next as any);
-  }, []);
+    persistSettings(next);
+  }, [persistSettings]);
 
   const handleConnect = useCallback(() => {
-    Connect(settings.activeProfileId).catch(() => {
+    flushSettings().then(()=>Connect(settings.activeProfileId)).catch(() => {
       /* errors surface via the status event */
     });
-  }, [settings.activeProfileId]);
+  }, [settings.activeProfileId,flushSettings]);
 
   const handleDisconnect = useCallback(() => {
     Disconnect();
   }, []);
 
-  const navTop = settings.navPosition === "top";
+  const navPosition=(["left","top","right","bottom"].includes(settings.navPosition)?settings.navPosition:"left") as "left"|"top"|"right"|"bottom";
 
   return (
     <div className="relative flex h-screen flex-col bg-bg text-text">
       <TitleBar minimizeToTray={settings.minimizeToTray} />
-      <div className={`flex min-h-0 flex-1 ${navTop ? "flex-col" : ""}`}>
+      {view === "routing" && settings.routingMode === "pro" && (
+        <div className="window-resize-frame" aria-hidden="true">
+          {(["top", "right", "bottom", "left"] as const).map(edge => (
+            <div key={edge} className={`window-resize-edge window-resize-${edge}`} />
+          ))}
+        </div>
+      )}
+      <div className={`flex min-h-0 flex-1 ${navPosition === "top" ? "flex-col" : navPosition === "bottom" ? "flex-col-reverse" : navPosition === "right" ? "flex-row-reverse" : ""}`}>
         <Sidebar
           active={view}
-          position={navTop ? "top" : "left"}
+          position={navPosition}
           onSelect={setView}
         />
         <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div key={view} className={`h-full min-h-0 ${view === "settings" ? "" : "animate-view"}`} >
           {view === "connection" && (
             <ConnectionView
               status={status}
               activeProfile={activeProfile}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
-              onOpenConfigs={() => {
-                if (activeProfile)
-                  setSelectedGroup(activeProfile.subId || "manual");
-                setView("configs");
-              }}
             />
           )}
           {view === "profiles" && (
@@ -267,6 +280,7 @@ export default function App() {
               onAddSub={handleAddSub}
               onUpdateSub={handleUpdateSub}
               onDeleteSub={handleDeleteSub}
+              onDeleteProfile={handleDelete}
               onSelectGroup={setSelectedGroup}
             />
           )}
@@ -281,6 +295,7 @@ export default function App() {
               core={settings.core}
               onActivate={handleActivate}
               onChanged={refreshProfiles}
+              onDelete={handleDelete}
             />
           )}
           {view === "routing" && (
@@ -298,6 +313,7 @@ export default function App() {
               onChange={handleSettings}
             />
           )}
+          </div>
         <Toasts lifted={view === "routing" && settings.routingMode === "pro"} />
       </main>
       </div>

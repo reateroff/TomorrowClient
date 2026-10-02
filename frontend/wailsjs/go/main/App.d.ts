@@ -4,10 +4,17 @@ import {model} from '../models';
 import {main} from '../models';
 import {cores} from '../models';
 import {device} from '../models';
+import {vpn} from '../models';
 
 export function AddSubscription(arg1:string,arg2:string):Promise<model.Subscription>;
 
+export function CheckUpdates():Promise<main.UpdateInfo>;
+
 export function ClearLogs():Promise<void>;
+
+export function CloseConnection(arg1:string):Promise<void>;
+
+export function CollectGarbage():Promise<void>;
 
 export function Connect(arg1:string):Promise<void>;
 
@@ -17,11 +24,19 @@ export function DeleteSubscription(arg1:string):Promise<void>;
 
 export function Disconnect():Promise<void>;
 
+export function DownloadUpdate():Promise<string>;
+
 export function ExportDiagnostics():Promise<string>;
+
+export function ExportHeapProfile():Promise<string>;
+
+export function ExportRouting():Promise<string>;
 
 export function GetActiveProfileJSON():Promise<string>;
 
 export function GetAppInfo():Promise<main.AppInfo>;
+
+export function GetConnections():Promise<main.ConnectionSnapshot>;
 
 export function GetCoreIssues():Promise<Record<string, string>>;
 
@@ -29,11 +44,15 @@ export function GetCores():Promise<Array<cores.Info>>;
 
 export function GetDeviceInfo():Promise<device.Info>;
 
+export function GetGoroutineDump():Promise<string>;
+
 export function GetLogs():Promise<Array<string>>;
 
 export function GetProfileCores(arg1:string):Promise<main.ProfileCores>;
 
 export function GetProfiles():Promise<Array<model.Profile>>;
+
+export function GetRuntimeStats():Promise<main.RuntimeStats>;
 
 export function GetSettings():Promise<model.AppSettings>;
 
@@ -43,7 +62,11 @@ export function GetStatus():Promise<model.Status>;
 
 export function GetSubscriptions():Promise<Array<model.Subscription>>;
 
+export function GetUpdateInfo():Promise<main.UpdateInfo>;
+
 export function ImportLinks(arg1:string):Promise<Array<model.Profile>>;
+
+export function ImportRouting():Promise<model.AppSettings>;
 
 export function ListProcesses():Promise<Array<main.ProcessInfo>>;
 
@@ -65,10 +88,14 @@ export function SaveProfileJSON(arg1:string,arg2:string):Promise<model.Profile>;
 
 export function SaveSettings(arg1:model.AppSettings):Promise<void>;
 
+export function ShowUpdateFolder():Promise<void>;
+
 export function SimulateStatus(arg1:string):Promise<void>;
 
 export function StopSimulation():Promise<void>;
 
 export function SubscriptionHeaders():Promise<Record<string, string>>;
+
+export function TestProfileSpeed(arg1:string):Promise<vpn.SpeedResult>;
 
 export function UpdateSubscription(arg1:string):Promise<model.Subscription>;

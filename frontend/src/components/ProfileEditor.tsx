@@ -1,3 +1,6 @@
+import ClientSelect from "./ClientSelect";
+import FieldHelp from "./FieldHelp";
+import ModalPortal from "./ModalPortal";
 import { useEffect, useMemo, useState } from "react";
 import { X, Copy, Check, FileJson, Link2, Lock, CircleCheck, CircleX } from "lucide-react";
 import type { Profile, ProfileCores } from "../types";
@@ -27,6 +30,7 @@ export default function ProfileEditor({ profile, hideData, onClose, onSaved }: P
   }, [onClose]);
 
   return (
+    <ModalPortal onClose={onClose}>
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-sm" onClick={onClose}>
       <div
         className="animate-view flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
@@ -59,6 +63,7 @@ export default function ProfileEditor({ profile, hideData, onClose, onSaved }: P
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -476,7 +481,7 @@ function Footer({
         <button
           onClick={onSave}
           disabled={busy}
-          className="no-drag rounded-lg bg-accent px-5 py-1.5 text-sm font-medium text-bg transition hover:bg-accent-soft disabled:opacity-50"
+          className="no-drag rounded-lg bg-accent px-5 py-1.5 text-sm font-medium text-on-accent transition hover:bg-accent-soft disabled:opacity-50"
         >
           Сохранить
         </button>
@@ -496,10 +501,10 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 function Field({ label, children, top }: { label: string; children: React.ReactNode; top?: boolean }) {
   return (
-    <label className={`grid grid-cols-[132px_1fr] gap-3 ${top ? "items-start" : "items-center"}`}>
-      <span className={`text-xs text-text-muted ${top ? "pt-1.5" : ""}`}>{label}</span>
+    <div role="group" aria-label={label} className={`grid grid-cols-[132px_1fr] gap-3 ${top ? "items-start" : "items-center"}`}>
+      <span className={`flex items-center gap-1.5 text-xs text-text-muted ${top ? "pt-1.5" : ""}`}><span>{label}</span><FieldHelp label={label} text={FIELD_HELP[label] ?? `Параметр ${label}: должен совпадать с настройкой сервера.`}/></span>
       {children}
-    </label>
+    </div>
   );
 }
 
@@ -527,32 +532,10 @@ function Input({
   );
 }
 
-// Select is native here: a dense form with many dropdowns reads better with
-// the system list than with a popover per field.
-function Select({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: { id: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  const known = options.some((o) => o.id === value);
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs text-text outline-none transition [color-scheme:dark] focus:border-accent/60"
-    >
-      {!known && <option value={value}>{value}</option>}
-      {options.map((o) => (
-        <option key={o.id} value={o.id} className="bg-surface-2">
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
+// Keep imported/unknown protocol values visible without a native browser list.
+function Select({value,options,onChange}:{value:string;options:{id:string;label:string}[];onChange:(v:string)=>void}){
+ const all=options.some(o=>o.id===value)?options:[{id:value,label:value},...options];
+ return <ClientSelect value={value} options={all} onChange={onChange} className="w-full py-1.5 font-mono" align="left"/>;
 }
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -566,3 +549,38 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
     </button>
   );
 }
+
+const FIELD_HELP:Record<string,string>={
+ "UUID":"Идентификатор пользователя на сервере. Не генерируйте новый без изменения сервера.",
+ "Адрес":"IP или домен прокси-сервера. Не адрес сайта, который вы открываете.","Порт":"Порт сервера от 1 до 65535.",
+ "Шифрование":"VLESS Encryption: параметры согласуются с сервером. none отключает этот дополнительный слой; TLS/REALITY задаются отдельно.",
+ "Encryption":"VLESS Encryption: строка параметров и ключ сервера. Не путайте с TLS/REALITY.",
+ "Flow":"Режим обработки VLESS. xtls-rprx-vision требует соответствующей конфигурации сервера.",
+ "Упаковка UDP":"Способ инкапсуляции UDP (xudp/packetaddr). Оставьте пустым для значения ядра по умолчанию.",
+ "Транспорт":"Способ передачи данных: TCP, WebSocket, gRPC, XHTTP и другие. Должен совпадать с сервером.",
+ "Безопасность":"TLS проверяет сертификат; REALITY использует публичный ключ и параметры серверного рукопожатия.",
+ "SNI":"Имя сервера в TLS/REALITY рукопожатии, обычно домен сертификата или serverName REALITY.",
+ "ALPN":"Список протоколов TLS: например h2,http/1.1. Оставьте пустым, если провайдер не указал.",
+ "Fingerprint":"uTLS отпечаток ClientHello (например chrome). Меняет форму TLS-рукопожатия, не HWID.",
+ "Public key":"Публичный ключ REALITY сервера. Это не UUID и не приватный ключ.",
+ "Ключ REALITY":"Публичный ключ REALITY сервера из ссылки подписки.",
+ "Short ID":"Разрешённый сервером shortId REALITY в hex-формате.",
+ "Spider X":"Дополнительный путь REALITY, если указан провайдером.",
+ "Allow insecure":"Отключает проверку сертификата TLS. Используйте только осознанно: защита от подмены сервера снижается.",
+ "Путь":"Путь HTTP/WebSocket/XHTTP, согласованный с сервером (например /proxy).",
+ "Host":"HTTP Host заголовок транспорта. Может отличаться от адреса подключения.",
+ "Service name":"Имя сервиса gRPC на сервере.","Mode":"Режим транспорта (например XHTTP stream-up / packet-up).",
+ "Extra":"Дополнительные параметры XHTTP в JSON. Поддержка зависит от выбранного ядра.","Имя":"Локальное название профиля; на соединение не влияет."};
+
+Object.assign(FIELD_HELP,{
+ "Название":"Локальное название сервера. На сетевое соединение не влияет.",
+ "Сеть":"Транспорт до сервера: TCP, WebSocket, gRPC, HTTPUpgrade или XHTTP. Должен совпадать с сервером.",
+ "Обфускация":"Маскировка TCP под HTTP. Заголовки Host и Path должны соответствовать серверу.",
+ "Режим":"Режим транспорта. Для gRPC: gun/multi; для XHTTP: auto/packet-up/stream-up/stream-one. Используйте значение провайдера.",
+ "Заголовок":"Тип заголовка mKCP/QUIC. Меняет вид пакетов, но не заменяет TLS.",
+ "Seed":"Общий секрет mKCP; должен совпадать на клиенте и сервере.",
+ "Отпечаток (fingerprint)":"uTLS ClientHello-отпечаток браузера. Например chrome; не является HWID устройства.",
+ "Без проверки сертификата":"Отключает проверку TLS-сертификата. Это снижает защиту от подмены сервера.",
+ "Reality Pbk":"Публичный ключ REALITY сервера из подписки. Не приватный ключ и не UUID.",
+ "Reality SID":"Short ID REALITY в hex-формате, разрешённый сервером.",
+ "Reality SpiderX":"Дополнительный путь REALITY из серверной конфигурации."});

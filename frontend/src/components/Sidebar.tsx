@@ -11,7 +11,7 @@ const NAV: { key: ViewKey; label: string; icon: typeof Shield }[] = [
 
 interface Props {
   active: ViewKey;
-  position: "left" | "top";
+  position: "left" | "top" | "right" | "bottom";
   onSelect: (v: ViewKey) => void;
 }
 
@@ -22,16 +22,17 @@ export default function Sidebar({ active, position, onSelect }: Props) {
   // container holding the tabs, with the active one outlined in the accent.
   // Both the container and the tabs use rounded-lg so they follow the corner
   // rounding chosen in Settings → Внешний вид.
-  if (position === "top") {
+  if (position === "top" || position === "bottom") {
     return (
-      <nav className="flex shrink-0 justify-center px-3 py-3">
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1.5 shadow-lg shadow-black/20">
+      <nav aria-label="Основная навигация" className="flex shrink-0 justify-center px-3 py-3">
+        <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1.5 shadow-lg shadow-black/20">
           {NAV.map(({ key, label, icon: Icon }) => {
             const isActive = active === key;
             return (
               <button
                 key={key}
-                onClick={() => onSelect(key)}
+                aria-current={isActive?"page":undefined}
+              onClick={() => onSelect(key)}
                 className={`flex items-center gap-2 rounded-lg border px-3.5 py-1.5 text-sm transition ${
                   isActive
                     ? "border-accent/50 bg-surface-2 text-text shadow-md shadow-accent/15"
@@ -52,13 +53,14 @@ export default function Sidebar({ active, position, onSelect }: Props) {
   }
 
   return (
-    <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-surface/40">
+    <aside className={`flex w-52 shrink-0 flex-col border-border bg-surface/40 ${position==="right"?"border-l":"border-r"}`}>
       <nav className="flex flex-1 flex-col gap-1 p-3">
         {NAV.map(({ key, label, icon: Icon }) => {
           const isActive = active === key;
           return (
             <button
               key={key}
+              aria-current={isActive?"page":undefined}
               onClick={() => onSelect(key)}
               className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
                 isActive

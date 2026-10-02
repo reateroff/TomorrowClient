@@ -3,10 +3,12 @@
 package vpn
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -475,4 +477,49 @@ func TestProRoutingAccepted(t *testing.T) {
 	}
 	_ = instance.Close()
 	cancel()
+}
+
+func TestCoreNativeStackCannotBeOverridden(t *testing.T) {
+	oldCache := singbox.CacheDir
+	singbox.CacheDir = t.TempDir()
+	defer func() { singbox.CacheDir = oldCache }()
+	p := profileFor(profileCases[0].mutate)
+	for _, core := range []model.Core{model.CoreSingBox, model.CoreTodayCore, model.CoreXray, model.CoreMihomo} {
+		for _, stack := range []string{"mixed", "gvisor", "system", "garbage", ""} {
+			t.Run(string(core)+"/"+stack, func(t *testing.T) {
+				s := testSettings
+				s.Core = core
+				s.Stack = stack
+				var cfg []byte
+				var err error
+				switch core {
+				case model.CoreSingBox:
+					cfg, err = singbox.Build(p, s, singbox.Upstream)
+				case model.CoreTodayCore:
+					cfg, err = singbox.Build(p, s, singbox.TodayCore)
+				default:
+					cfg, err = singbox.BuildFront(s, singbox.SocksUpstream{Port: 10999, Username: "u", Password: "p", Server: p.Address, Self: `C:\TomorrowClient.exe`})
+				}
+				mustBuild(t, cfg, err)
+				var doc struct {
+					Inbounds     []map[string]any `json:"inbounds"`
+					Experimental struct {
+						Cache struct {
+							Path string `json:"path"`
+						} `json:"cache_file"`
+					} `json:"experimental"`
+				}
+				if err = json.Unmarshal(cfg, &doc); err != nil {
+					t.Fatal(err)
+				}
+				if _, exists := doc.Inbounds[0]["stack"]; exists {
+					t.Fatal("native stack was overridden")
+				}
+				want := map[model.Core]string{model.CoreSingBox: "sing-box.db", model.CoreTodayCore: "todaycore.db", model.CoreXray: "xray-tun.db", model.CoreMihomo: "mihomo-tun.db"}[core]
+				if filepath.Base(doc.Experimental.Cache.Path) != want {
+					t.Fatalf("cache not isolated: %q", doc.Experimental.Cache.Path)
+				}
+			})
+		}
+	}
 }

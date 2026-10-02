@@ -27,6 +27,9 @@ import (
 // ClashAPIAddr is the local Clash-compatible API address of the tunnel core.
 const ClashAPIAddr = "127.0.0.1:19090"
 
+// APISecret is a per-process credential; never persisted or sent to the frontend.
+var APISecret string
+
 // Flavor selects which sing-box build a config is written for.
 type Flavor int
 
@@ -81,13 +84,24 @@ func BuildFront(s model.AppSettings, up SocksUpstream) ([]byte, error) {
 		"username":    up.Username,
 		"password":    up.Password,
 	}
-	cfg := tunnel(s, proxy, &up, "sing-box.db")
+	// Each fronted core keeps its own cache; no state bleeds into native boxes.
+	cache := "front-tun.db"
+	switch s.Core {
+	case model.CoreXray:
+		cache = "xray-tun.db"
+	case model.CoreMihomo:
+		cache = "mihomo-tun.db"
+	}
+	cfg := tunnel(s, proxy, &up, cache)
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
 // tunnel assembles the TUN, DNS and routing around a proxy outbound.
 func tunnel(s model.AppSettings, proxy map[string]any, front *SocksUpstream, cacheFile string) map[string]any {
-	// TUN inbound honours the user-chosen adapter name, network stack and MTU.
+	// TUN honours the adapter name and MTU, but never a user stack override.
+	// sing-box 1.15/TodayCore use the native Go stack when stack is omitted;
+	// the old mixed/gvisor/system field is deprecated. Let each linked core
+	// own its stack instead of pinning a legacy implementation.
 	// No "sniff" field here: it is a legacy inbound option that sing-box
 	// rejects outright. Sniffing is requested by the route rule instead.
 	tun := map[string]any{
@@ -97,7 +111,6 @@ func tunnel(s model.AppSettings, proxy map[string]any, front *SocksUpstream, cac
 		"address":        []any{"172.19.0.1/30"},
 		"auto_route":     true,
 		"strict_route":   s.StrictRoute,
-		"stack":          firstNonEmpty(s.Stack, "mixed"),
 	}
 	if s.IPv6 {
 		tun["address"] = []any{"172.19.0.1/30", "fdfe:dcba:9876::1/126"}
@@ -142,6 +155,7 @@ func tunnel(s model.AppSettings, proxy map[string]any, front *SocksUpstream, cac
 	experimental := map[string]any{
 		"clash_api": map[string]any{
 			"external_controller": ClashAPIAddr,
+			"secret":              APISecret,
 		},
 	}
 	if CacheDir != "" {

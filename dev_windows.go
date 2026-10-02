@@ -24,6 +24,7 @@ import (
 
 	"TomorrowClient/internal/cores"
 	"TomorrowClient/internal/model"
+	"TomorrowClient/internal/startup"
 	"TomorrowClient/internal/vpn"
 )
 
@@ -144,6 +145,9 @@ func (a *App) RunNetDiag() (string, error) {
 // ResetSettings restores the default configuration. Profiles and subscriptions
 // are left untouched; DevMode is kept so the caller does not lock itself out.
 func (a *App) ResetSettings() error {
+	if err := startup.Set(false); err != nil {
+		return err
+	}
 	def := model.DefaultSettings()
 	def.DevMode = a.store.Settings().DevMode
 	return a.store.SaveSettings(def)
@@ -157,6 +161,9 @@ func (a *App) ResetAllData() error {
 	a.stopSimulation()
 	if a.engine != nil {
 		a.engine.Disconnect()
+	}
+	if err := startup.Set(false); err != nil {
+		return err
 	}
 	if err := a.store.ResetAll(); err != nil {
 		return err

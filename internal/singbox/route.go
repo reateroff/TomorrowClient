@@ -36,6 +36,7 @@ func buildRoute(s model.AppSettings, front *SocksUpstream) routeParts {
 		rules = append(rules, map[string]any{"action": "sniff"})
 	}
 	rules = append(rules, map[string]any{"protocol": "dns", "action": "hijack-dns"})
+	rules = append(rules, map[string]any{"ip_is_private": true, "outbound": "direct"})
 
 	final := model.ActionProxy
 	var (
@@ -50,18 +51,29 @@ func buildRoute(s model.AppSettings, front *SocksUpstream) routeParts {
 			final = s.Graph.Final
 		}
 	} else {
+		// Use the same matcher compiler in Easy and Pro, including GeoSite,
+		// GeoIP rule-set downloads and split DNS. Preserve the flat rule order.
+		nodes := make([]model.RouteNode, 0, len(s.Rules))
 		for _, r := range s.Rules {
-			if rule := userRule(r); rule != nil {
-				rules = append(rules, rule)
+			action := r.Action
+			if action == "" {
+				action = model.ActionProxy
 			}
+			nodes = append(nodes, model.RouteNode{Type: r.Type, Values: []string{r.Value}, Action: action})
+		}
+		g := graphRules(model.RouteGraph{Nodes: nodes})
+		rules = append(rules, g.rules...)
+		ruleSets, dnsRules = g.ruleSets, g.dnsRules
+		if s.SimpleFinal != "" {
+			final = s.SimpleFinal
 		}
 	}
 
-	// Local/LAN traffic (loopback, private ranges) always goes direct.
-	rules = append(rules, map[string]any{"ip_is_private": true, "outbound": "direct"})
+	// The LAN direct rule precedes user rules above.
 
 	block := map[string]any{
 		"auto_detect_interface":   true,
+		"find_process":            true,
 		"default_domain_resolver": "local",
 		"final":                   "proxy",
 	}
@@ -70,7 +82,7 @@ func buildRoute(s model.AppSettings, front *SocksUpstream) routeParts {
 		block["final"] = "direct"
 	case model.ActionBlock:
 		// final must name an outbound; blocking is a rule that matches all.
-		rules = append(rules, map[string]any{"network": []any{"tcp", "udp"}, "action": "reject"})
+		rules = append(rules, map[string]any{"network": []any{"tcp", "udp", "icmp"}, "action": "reject"})
 	}
 	block["rules"] = rules
 	if len(ruleSets) > 0 {
@@ -210,7 +222,7 @@ func nodeMatch(n model.RouteNode) (map[string]any, []ruleSetRef) {
 			field = "process_path"
 			vals = append(vals, v)
 		case "network":
-			if v = strings.ToLower(v); v != "tcp" && v != "udp" {
+			if v = strings.ToLower(v); v != "tcp" && v != "udp" && v != "icmp" {
 				continue
 			}
 			field = "network"

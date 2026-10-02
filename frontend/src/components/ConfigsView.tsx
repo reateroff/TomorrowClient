@@ -1,3 +1,7 @@
+import {confirmAction} from "./ClientConfirm";
+import type {SpeedResult} from "../backend";
+import {TestProfileSpeed} from "../backend";
+import {push} from "./Toasts";
 import { useEffect, useState } from "react";
 import {
   CheckCircle2,
@@ -8,6 +12,8 @@ import {
   Loader2,
   AlertTriangle,
   FileCode2,
+  Trash2,
+  Gauge,
 } from "lucide-react";
 import ProfileEditor from "./ProfileEditor";
 import type { Profile, Subscription } from "../types";
@@ -27,6 +33,7 @@ interface Props {
   hideData: boolean; // demo mode: mask server addresses
   core: string; // the core setting; servers it cannot run are flagged
   onActivate: (id: string) => void;
+  onDelete: (id:string)=>Promise<void>;
   onChanged: () => void; // a server was edited
 }
 
@@ -45,11 +52,14 @@ export default function ConfigsView({
   core,
   onActivate,
   onChanged,
+  onDelete,
 }: Props) {
   // The server whose configuration is open.
   const [editing, setEditing] = useState<Profile | null>(null);
   const [pings, setPings] = useState<PingMap>({});
   const [pinging, setPinging] = useState(false);
+  const [speedBusy,setSpeedBusy]=useState(false);
+  const speed=async()=>{if(!activeId)return;if(!await confirmAction({title:"Тест скорости профиля",description:"Тест скачает до 25 МБ через выбранный профиль. Продолжить?",confirmLabel:"Запустить тест"}))return;setSpeedBusy(true);try{const id=activeId;const r=await TestProfileSpeed(id);await onChanged();push(`Скорость: ${r.downloadMbps.toFixed(2)} Мбит/с`,"ok",{description:`${r.core} · ${(r.bytes/1e6).toFixed(1)} МБ · ${(r.durationMs/1000).toFixed(1)} с`})}catch(e){push(String(e),"error")}finally{setSpeedBusy(false)}};
   // Servers the chosen core cannot run, with the reason.
   const [issues, setIssues] = useState<Record<string, string>>({});
 
@@ -77,6 +87,7 @@ export default function ConfigsView({
   const servers = groupId === "manual" ? manual : bySub(groupId);
   const groupName = groups.find((g) => g.id === groupId)?.name ?? "";
 
+  const remove=async(p:Profile)=>{if(!await confirmAction({title:"Удалить сервер?",description:`«${hideData?"Выбранный сервер":p.name}» будет удалён из добавленных вручную.`,confirmLabel:"Удалить",danger:true}))return;try{await onDelete(p.id);push("Сервер удалён","ok")}catch(e){push(String(e),"error")}};
   const empty = profiles.length === 0;
 
   // pingAll tests every server in the current group concurrently and stores the
@@ -127,6 +138,7 @@ export default function ConfigsView({
               : "выбор локации"}
           </p>
         </div>
+        <button disabled={!activeId||speedBusy} onClick={speed} className="no-drag ml-auto mr-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-text-muted disabled:opacity-50" title="Скорость загрузки выбранного профиля, до 25 МБ">{speedBusy?"Тест скорости…":"Скорость"}</button>
         {servers.length > 0 && (
           <button
             onClick={pingAll}
@@ -144,6 +156,8 @@ export default function ConfigsView({
         )}
       </div>
       </div>
+
+
 
       {empty ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -178,6 +192,8 @@ export default function ConfigsView({
               issue={issues[p.id]}
               onActivate={onActivate}
               onEdit={() => setEditing(p)}
+              speed={p.speed}
+              onDelete={!p.subId?()=>void remove(p):undefined}
             />
           ))}
           </div>
@@ -207,6 +223,8 @@ function LocationRow({
   issue,
   onActivate,
   onEdit,
+  speed,
+  onDelete,
 }: {
   profile: Profile;
   active: boolean;
@@ -217,15 +235,18 @@ function LocationRow({
   issue?: string;
   onActivate: (id: string) => void;
   onEdit: () => void;
+  speed?:SpeedResult;
+  onDelete?:()=>void;
 }) {
   return (
     <div
-      className={`group flex items-center gap-3 rounded-lg border px-4 py-3 transition ${
+      className={`group overflow-hidden rounded-lg border transition ${
         active
           ? "border-accent/50 bg-surface-2"
           : "border-border bg-surface hover:bg-surface-2/60"
       }`}
     >
+      <div className="flex min-w-0 items-center gap-3 px-4 py-3">
       <button
         onClick={() => onActivate(p.id)}
         onDoubleClick={onEdit}
@@ -259,6 +280,7 @@ function LocationRow({
         <FileCode2 size={15} />
       </button>
 
+      {onDelete&&<button aria-label="Удалить сервер" onClick={onDelete} className="no-drag shrink-0 rounded-md p-1.5 text-text-faint transition hover:bg-danger/10 hover:text-danger disabled:opacity-30" disabled={active&&connected}><Trash2 size={15}/></button>}
       {/* A pinned core that cannot run this server says so up front, rather
           than letting the user find out on Connect. */}
       {issue && (
@@ -281,6 +303,8 @@ function LocationRow({
           активен
         </span>
       )}
+      </div>
+      {speed&&<div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-soft px-4 py-2.5 text-xs text-text-muted"><span className="inline-flex items-center gap-1.5"><Gauge size={13} className="text-accent"/>Загрузка</span><span className="font-mono font-medium text-accent">{speed.downloadMbps.toFixed(2)} Мбит/с</span><span className="ml-auto font-mono text-[10px] text-text-faint">{(speed.bytes/1e6).toFixed(1)} МБ · {(speed.durationMs/1000).toFixed(1)} с · {speed.core}</span></div>}
     </div>
   );
 }

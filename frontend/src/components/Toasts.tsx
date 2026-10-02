@@ -1,3 +1,4 @@
+import {ConfirmationHost} from "./ClientConfirm";
 import { Toaster, toast } from "sonner";
 import {
   CheckCircle2,
@@ -64,7 +65,7 @@ const ICONS = {
 // Pro routing canvas keeps its + button there).
 export default function Toasts({ lifted = false }: { lifted?: boolean }) {
   return (
-    <Toaster
+    <><Toaster
       position="bottom-right"
       offset={{ right: 16, bottom: lifted ? 80 : 16 }}
       gap={8}
@@ -77,12 +78,12 @@ export default function Toasts({ lifted = false }: { lifted?: boolean }) {
         classNames: {
           toast:
             "group/toast relative flex w-[var(--width)] items-start gap-3 rounded-[var(--radius-lg)] border border-border bg-surface/95 px-4 py-3 shadow-[0_8px_30px_rgb(0_0_0/0.35)] backdrop-blur-md font-sans",
-          icon: "mt-px flex shrink-0 items-center",
+          icon: "relative mt-px flex h-4 w-4 shrink-0 items-center justify-center",
           content: "flex min-w-0 flex-1 flex-col gap-0.5",
           title: "text-sm leading-snug text-text break-words",
           description: "text-xs leading-relaxed text-text-muted break-words",
           actionButton:
-            "no-drag shrink-0 self-center rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-bg transition hover:bg-accent-soft",
+            "no-drag shrink-0 self-center rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-on-accent transition hover:bg-accent-soft",
           cancelButton:
             "no-drag shrink-0 self-center rounded-md border border-border px-2.5 py-1 text-xs text-text-muted transition hover:bg-surface-2",
           closeButton:
@@ -91,6 +92,6 @@ export default function Toasts({ lifted = false }: { lifted?: boolean }) {
           warning: "border-amber/40",
         },
       }}
-    />
+    /><ConfirmationHost/></>
   );
 }

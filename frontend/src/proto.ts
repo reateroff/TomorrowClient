@@ -77,3 +77,12 @@ export function describeChain(p: Profile): string {
 
   return parts.join(" · ");
 }
+
+// Current linked sing-box/TodayCore default to Go; Xray/mihomo are fronted.
+// This is read-only, never a selection written to settings.stack.
+export function tunStackInfo(core: string): {label: string; hint: string} {
+  if (core === "auto") return {label: "По выбранному ядру", hint: "Нативный стек определяется ядром профиля. Ручной выбор отключён."};
+  if (core === "todaycore") return {label: "TodayCore · Go", hint: "Встроенный стек TodayCore. Клиент не переопределяет его."};
+  if (core === "sing-box") return {label: "sing-box · Go", hint: "Встроенный Go-стек sing-box. Ручной выбор отключён."};
+  return {label: `${CORE_LABEL[core] || "Xray"} · sing-box TUN / Go`, hint: "Прокси обслуживает выбранное ядро, TUN — отдельный адаптер sing-box с нативным Go-стеком и кэшем этого ядра."};
+}

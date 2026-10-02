@@ -21,7 +21,7 @@ export interface ThemePreset {
 // How many presets the Appearance screen shows before "показать ещё".
 export const THEMES_VISIBLE = 6;
 
-// Dark presets, no harsh pure white text. "graphite" is the shipped default and
+// Dark presets, no harsh pure white text. "smoke" is the shipped default and
 // the first THEMES_VISIBLE entries are the ones shown unexpanded, so order
 // matters: keep the plainest six first.
 export const THEME_PRESETS: ThemePreset[] = [
@@ -196,6 +196,9 @@ export const THEME_PRESETS: ThemePreset[] = [
   },
 ];
 
+// Soft-tinted additions; surfaces stay quiet and borders are not accents.
+THEME_PRESETS.push(...[{"id": "aurora", "name": "Аврора", "colors": {"bg": "#101219", "surface": "#181c27", "surface2": "#202637", "border": "#343d52", "borderSoft": "#292f40", "text": "#e6e9f1", "textMuted": "#a0a8bd", "textFaint": "#747e96"}}, {"id": "neon", "name": "Неон", "colors": {"bg": "#131018", "surface": "#1d1825", "surface2": "#282131", "border": "#3e334b", "borderSoft": "#302838", "text": "#ebe5ef", "textMuted": "#afa1bb", "textFaint": "#807389"}}, {"id": "lagoon", "name": "Лагуна", "colors": {"bg": "#0e1518", "surface": "#172126", "surface2": "#202d33", "border": "#34464e", "borderSoft": "#29383f", "text": "#e3ecee", "textMuted": "#9cafb5", "textFaint": "#72878f"}}, {"id": "sunset", "name": "Закат", "colors": {"bg": "#181214", "surface": "#251b1e", "surface2": "#302328", "border": "#4a363e", "borderSoft": "#392a30", "text": "#eee5e5", "textMuted": "#b7a2a4", "textFaint": "#8a757a"}}, {"id": "mint-light", "name": "Светлая мята", "colors": {"bg": "#f2f5f3", "surface": "#fafcfb", "surface2": "#e8eeeb", "border": "#cad6d0", "borderSoft": "#dbe4df", "text": "#263d32", "textMuted": "#546d60", "textFaint": "#708778"}}, {"id": "sky-light", "name": "Светлое небо", "colors": {"bg": "#f2f4f7", "surface": "#fafbfd", "surface2": "#e8edf4", "border": "#c9d2df", "borderSoft": "#dce2eb", "text": "#293b53", "textMuted": "#576b86", "textFaint": "#7588a1"}}]);
+
 export interface Accent {
   id: string;
   name: string;
@@ -227,6 +230,14 @@ export const ACCENTS: Accent[] = [
   { id: "deep-wine", name: "Винный", color: "#8f4550", soft: "#b1636e" },
   { id: "deep-bronze", name: "Бронза", color: "#8a6a3a", soft: "#ab8955" },
   { id: "graphite-accent", name: "Графит", color: "#5a5f6b", soft: "#7c828f" },
+  {"id": "warm-sand", "name": "Дым · тёплый песок", "color": "#bca38f", "soft": "#d0bdaa"},
+  {"id": "plum-mist", "name": "Слива · сирень", "color": "#a58ead", "soft": "#bca8c2"},
+  {"id": "ocean-mist", "name": "Океан · морская пена", "color": "#7bafb7", "soft": "#9bc5cb"},
+  {"id": "moss-mist", "name": "Мох · шалфей", "color": "#95ac8a", "soft": "#b2c3aa"},
+  {"id": "wine-mist", "name": "Вино · пыльная роза", "color": "#bb8d96", "soft": "#cfa9b0"},
+  {"id": "steel-mist", "name": "Сталь · серебро", "color": "#9aaabc", "soft": "#b5c1ce"},
+  {"id": "aurora-mist", "name": "Аврора · лавандовый", "color": "#929fc4", "soft": "#b0b9d5"},
+  {"id": "sunset-mist", "name": "Закат · персиковый", "color": "#c79985", "soft": "#d9b6a6"},
 ];
 
 export interface FontChoice {
@@ -241,6 +252,10 @@ export const FONTS: FontChoice[] = [
   { id: "onest", name: "Onest", stack: '"Onest", "Inter", system-ui, sans-serif' },
   { id: "geist", name: "Geist", stack: '"Geist", "Inter", system-ui, sans-serif' },
   { id: "mono", name: "JetBrains Mono", stack: '"JetBrains Mono", ui-monospace, monospace' },
+  { id: "manrope", name: "Manrope", stack: '"Manrope", "Onest", system-ui, sans-serif' },
+  { id: "rubik", name: "Rubik", stack: '"Rubik", "Onest", system-ui, sans-serif' },
+  { id: "nunito", name: "Nunito Sans", stack: '"Nunito Sans", "Onest", system-ui, sans-serif' },
+  { id: "open-sans", name: "Open Sans", stack: '"Open Sans", "Onest", system-ui, sans-serif' },
 ];
 
 export interface RadiusChoice {
@@ -296,6 +311,11 @@ export const ANIMATIONS: AnimationChoice[] = [
     keyframes: "anim-scale",
     duration: "0.22s",
   },
+  {"id": "slide-left", "name": "Слева", "desc": "Мягкий сдвиг слева", "keyframes": "anim-slide-left", "duration": "0.28s"},
+  {"id": "drop", "name": "Спуск", "desc": "Появляется сверху", "keyframes": "anim-drop", "duration": "0.28s"},
+  {"id": "zoom-out", "name": "Отдаление", "desc": "Из крупного в обычный", "keyframes": "anim-zoom-out", "duration": "0.3s"},
+  {"id": "soft-blur", "name": "Фокус", "desc": "Плавно набирает чёткость", "keyframes": "anim-soft-blur", "duration": "0.32s"},
+  {"id": "diagonal", "name": "Диагональ", "desc": "Лёгкий подъём со сдвигом", "keyframes": "anim-diagonal", "duration": "0.3s"},
   {
     id: "none",
     name: "Без анимаций",
@@ -382,6 +402,12 @@ function lighten(hex: string, amount: number): string {
   return `#${to2(mix(r))}${to2(mix(g))}${to2(mix(b))}`;
 }
 
+export function contrastText(hex:string):string {
+ const value=hex.replace("#","");const h=value.length===3?value.split("").map(c=>c+c).join(""):value;
+ const rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16)/255).map(c=>c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4));
+ const l=.2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];return (l+.05)/.05>1.05/(l+.05)?"#000000":"#ffffff";
+}
+
 // applyTheme writes the chosen appearance onto the document root. Called on
 // startup and whenever an appearance setting changes.
 export function applyTheme(opts: {
@@ -390,11 +416,14 @@ export function applyTheme(opts: {
   font: string;
   radius: string;
   animation?: string;
+  customThemes?: {id:string;name:string;colors:Record<string,string>;accent:string}[];
+  uiScale?: number; density?: string; customRadius?: number;
 }): void {
   const root = document.documentElement.style;
 
+  const custom = opts.customThemes?.find(t => t.id === opts.theme);
   const preset = byId(THEME_PRESETS, opts.theme, THEME_PRESETS[0]);
-  const c = preset.colors;
+  const c = {...preset.colors, ...(custom?.colors ?? {})};
   root.setProperty("--color-bg", c.bg);
   root.setProperty("--color-surface", c.surface);
   root.setProperty("--color-surface-2", c.surface2);
@@ -414,13 +443,19 @@ export function applyTheme(opts: {
     root.setProperty("--color-accent-soft", accent.soft);
   }
 
+  root.setProperty("--color-ok", custom?.colors.success ?? "#5bd6a0");
+  root.setProperty("--color-danger", custom?.colors.danger ?? "#ff6b6b");
+  root.setProperty("font-size", `${16 * Math.min(120,Math.max(85,opts.uiScale ?? 100))/100}px`);
+  document.documentElement.setAttribute("data-density",opts.density ?? "comfortable");
+  root.setProperty("--color-on-accent", contrastText(isHex(opts.accent)?opts.accent:byId(ACCENTS,opts.accent,ACCENTS[0]).color));
   const font = byId(FONTS, opts.font, FONTS[0]);
   root.setProperty("--font-sans", font.stack);
 
   const radius = byId(RADII, opts.radius, RADII[1]);
-  root.setProperty("--radius-lg", radius.value);
+  const rounding=opts.radius === "custom" ? Math.min(32,Math.max(0,opts.customRadius ?? 14)) : parseFloat(radius.value);
+  for(const [name,multiplier] of Object.entries({xs:.25,sm:.35,md:.55,lg:1,xl:1.15,"2xl":1.3,"3xl":1.5}))root.setProperty(`--radius-${name}`,`${Math.round(rounding*multiplier*10)/10}px`);
 
   // Animations are selected by attribute; style.css holds one rule per preset.
-  const anim = byId(ANIMATIONS, opts.animation ?? "", ANIMATIONS[0]);
+  const anim = byId(ANIMATIONS, opts.animation ?? "", ANIMATIONS.find(a => a.id === "fade")!);
   document.documentElement.setAttribute("data-anim", anim.id);
 }

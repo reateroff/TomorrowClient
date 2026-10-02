@@ -54,12 +54,21 @@ const (
 
 // Profile describes a single server / outbound. Fields are a superset that
 // covers the protocols we support; unused ones stay empty.
+type ProfileSpeed struct {
+	DownloadMbps float64 `json:"downloadMbps"`
+	Bytes        int64   `json:"bytes"`
+	DurationMs   int64   `json:"durationMs"`
+	Core         string  `json:"core"`
+	MeasuredAt   int64   `json:"measuredAt"`
+}
+
 type Profile struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Protocol Protocol `json:"protocol"`
-	Address  string   `json:"address"`
-	Port     int      `json:"port"`
+	Speed    *ProfileSpeed `json:"speed,omitempty"`
+	ID       string        `json:"id"`
+	Name     string        `json:"name"`
+	Protocol Protocol      `json:"protocol"`
+	Address  string        `json:"address"`
+	Port     int           `json:"port"`
 
 	// Auth / identity
 	UUID     string `json:"uuid,omitempty"`     // vless / vmess / tuic
@@ -151,7 +160,7 @@ type Subscription struct {
 // RoutingRule is one user-defined routing entry: match traffic by domain, IP
 // or process (application) and send it through the proxy, direct, or block it.
 type RoutingRule struct {
-	Type   string `json:"type"`   // "domain" | "ip" | "process"
+	Type   string `json:"type"`   // "domain" | "ip" | "process" | "geosite" | "geoip"
 	Value  string `json:"value"`  // domain suffix, IP/CIDR, or process name
 	Action string `json:"action"` // "proxy" | "direct" | "block"
 	Icon   string `json:"icon"`   // process rules only: PNG data URL of the app icon
@@ -213,8 +222,17 @@ type Point struct {
 }
 
 // RouteGraph is the Pro routing setup.
+type RouteNote struct {
+	ID   string  `json:"id"`
+	Text string  `json:"text"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+}
+
 type RouteGraph struct {
-	Nodes []RouteNode `json:"nodes"`
+	Notes       []RouteNote `json:"notes,omitempty"`
+	Nodes       []RouteNode `json:"nodes"`
+	FinalHidden bool        `json:"finalHidden"`
 	// Final is the action for traffic no node matched ("Остальное"); empty
 	// when unwired, which routes it through the proxy.
 	Final string `json:"final"`
@@ -227,10 +245,25 @@ type RouteGraph struct {
 // SettingsVersion is bumped whenever a stored setting needs a one-time rewrite
 // on load. See Store.migrate: recording the version is what keeps a migration
 // from running twice and overwriting a later deliberate choice.
-const SettingsVersion = 2
+const SettingsVersion = 3
 
 // AppSettings is the persisted user configuration.
+type CustomTheme struct {
+	ID     string            `json:"id"`
+	Name   string            `json:"name"`
+	Colors map[string]string `json:"colors"`
+	Accent string            `json:"accent"`
+}
+
 type AppSettings struct {
+	ClientPreset  string        `json:"clientPreset"`
+	ClientVersion string        `json:"clientVersion"`
+	CustomThemes  []CustomTheme `json:"customThemes"`
+	UIScale       float64       `json:"uiScale"`
+	Density       string        `json:"density"`
+	CustomRadius  float64       `json:"customRadius"`
+	AutoUpdate    bool          `json:"autoUpdate"`
+
 	// SettingsVersion records which migrations have already been applied to
 	// this file. Absent in files written before migrations existed, which
 	// reads as 0.
@@ -249,8 +282,8 @@ type AppSettings struct {
 	// TunName is the name of the WinTun adapter the tunnel creates. Empty means
 	// the built-in default ("TomorrowTun").
 	TunName string `json:"tunName"`
-	// Stack is the sing-box TUN network stack: "mixed" (default), "gvisor" or
-	// "system".
+	// Stack is a legacy compatibility field. It is cleared on load/save and
+	// never passed to a core. Each tunnel uses its linked core's native stack.
 	Stack string `json:"stack"`
 	// MTU of the TUN interface; 0 means the core default (usually 9000/1500).
 	MTU int `json:"mtu"`
@@ -258,6 +291,8 @@ type AppSettings struct {
 	Rules []RoutingRule `json:"rules"`
 	// RoutingMode is RoutingSimple (Rules) or RoutingPro (Graph).
 	RoutingMode string `json:"routingMode"`
+	// SimpleFinal is the catch-all for Easy routing; empty keeps the legacy proxy default.
+	SimpleFinal string `json:"simpleFinal,omitempty"`
 	// Graph is the Pro routing graph.
 	Graph RouteGraph `json:"graph"`
 
@@ -324,7 +359,7 @@ type AppSettings struct {
 	Font string `json:"font"`
 	// Radius is the corner rounding preset ("sharp" / "soft" / "round").
 	Radius string `json:"radius"`
-	// NavPosition places the navigation tabs on the "left" (default) or "top".
+	// NavPosition places the navigation tabs on the "left", "top" (default), "right" or "bottom".
 	NavPosition string `json:"navPosition"`
 	// Animation is the entrance animation preset for views and modals
 	// ("rise" / "slide" / "fade" / "scale" / "none").
@@ -344,20 +379,23 @@ func (s AppSettings) TunInterfaceName() string {
 // DefaultTunName is the built-in WinTun adapter name.
 const DefaultTunName = "TomorrowTun"
 
-// DefaultSettings returns the out-of-the-box configuration. The core is picked
-// per profile until the user pins one.
+// DefaultSettings pins Xray out of the box. Auto remains an explicit opt-in.
 func DefaultSettings() AppSettings {
 	return AppSettings{
 		SettingsVersion: SettingsVersion,
 
-		Core:        CoreAuto,
+		Core:        CoreXray,
+		AutoUpdate:  true,
+		UIScale:     100,
+		Density:     "comfortable",
 		AutoConnect: false,
 		DNS:         "1.1.1.1",
 		DNSFallback: "8.8.8.8",
 		TunName:     DefaultTunName,
-		Stack:       "mixed",
+		Stack:       "",
 		MTU:         0,
 		RoutingMode: RoutingSimple,
+		SimpleFinal: ActionProxy,
 		Graph:       RouteGraph{Final: ActionProxy},
 		StrictRoute: true,
 		Sniff:       true,
@@ -365,12 +403,12 @@ func DefaultSettings() AppSettings {
 		PingMethod:  PingGET,
 		PingURL:     DefaultPingURL,
 		PingTimeout: 5000,
-		Theme:       "graphite",
-		Accent:      "indigo",
-		Font:        "inter",
+		Theme:       "smoke",
+		Accent:      "sunset-mist",
+		Font:        "rubik",
 		Radius:      "soft",
-		NavPosition: "left",
-		Animation:   "rise",
+		NavPosition: "top",
+		Animation:   "fade",
 	}
 }
 

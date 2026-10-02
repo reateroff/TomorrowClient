@@ -18,8 +18,10 @@ import (
 // name (e.g. "chrome.exe") plus, when we can extract it, the app icon encoded
 // as a PNG data URL so the UI can render the real icon instead of a placeholder.
 type ProcessInfo struct {
-	Name string `json:"name"`
-	Icon string `json:"icon"` // "data:image/png;base64,..." or "" when unavailable
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Application bool   `json:"application"`
+	Icon        string `json:"icon"` // "data:image/png;base64,..." or "" when unavailable
 }
 
 // Lazy WinAPI handles used for icon extraction.
@@ -87,6 +89,8 @@ type bitmapInfoHeader struct {
 // alphabetically, each with its app icon when extractable. Used by the routing
 // tab so the user can pick a process — and see its real icon — without typing.
 func (a *App) ListProcesses() []ProcessInfo {
+	appPIDs := visibleApplicationPIDs()
+	applications := map[string]bool{}
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return nil
@@ -106,6 +110,9 @@ func (a *App) ListProcesses() []ProcessInfo {
 		name := windows.UTF16ToString(entry.ExeFile[:])
 		if name != "" && strings.HasSuffix(strings.ToLower(name), ".exe") {
 			key := strings.ToLower(name)
+			if appPIDs[entry.ProcessID] {
+				applications[key] = true
+			}
 			if _, ok := paths[key]; !ok {
 				paths[key] = processPath(entry.ProcessID)
 				order = append(order, name)
@@ -133,7 +140,7 @@ func (a *App) ListProcesses() []ProcessInfo {
 				iconCache[p] = icon
 			}
 		}
-		out = append(out, ProcessInfo{Name: name, Icon: icon})
+		out = append(out, ProcessInfo{Name: name, Icon: icon, Path: p, Application: applications[strings.ToLower(name)]})
 	}
 	return out
 }
@@ -305,4 +312,26 @@ func applyIconMask(hdc, hbmMask uintptr, img *image.RGBA, w, h int) {
 			}
 		}
 	}
+}
+
+// Enumerate visible unowned top-level windows: the same distinction users expect
+// from Task Manager's "Apps" rather than system/service executable heuristics.
+func visibleApplicationPIDs() map[uint32]bool {
+	result := map[uint32]bool{}
+	enum := modUser32.NewProc("EnumWindows")
+	visible := modUser32.NewProc("IsWindowVisible")
+	owner := modUser32.NewProc("GetWindow")
+	pidProc := modUser32.NewProc("GetWindowThreadProcessId")
+	callback := windows.NewCallback(func(hwnd, _ uintptr) uintptr {
+		v, _, _ := visible.Call(hwnd)
+		o, _, _ := owner.Call(hwnd, 4)
+		if v != 0 && o == 0 {
+			var pid uint32
+			pidProc.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+			result[pid] = true
+		}
+		return 1
+	})
+	enum.Call(callback, 0)
+	return result
 }

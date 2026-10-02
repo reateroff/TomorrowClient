@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -33,7 +35,8 @@ type App struct {
 	engine    *vpn.Engine
 	mToggle   *systray.MenuItem // tray "connect/disconnect" item, relabeled on status
 	startedAt time.Time         // process start, reported as uptime in the dev tools
-	storeErr  error             // why the on-disk store could not open, if it could not
+	tools     toolState
+	storeErr  error // why the on-disk store could not open, if it could not
 
 	// Developer-tools status simulation. simStop cancels the goroutine that
 	// animates fake traffic counters; nil when no simulation is running.
@@ -78,6 +81,11 @@ func NewApp() *App {
 	a.store = st
 	// Downloaded rule-sets and the core's other caches live with the data.
 	singbox.CacheDir = st.Dir()
+	token := make([]byte, 32)
+	if _, err := rand.Read(token); err != nil {
+		panic("secure controller token: " + err.Error())
+	}
+	singbox.APISecret = hex.EncodeToString(token)
 
 	// The engine pushes status snapshots to the frontend over the
 	// "vpn:status" event, and each core log line over "vpn:log". The status
@@ -107,6 +115,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.setupTray()
+	go a.updateLoop(ctx)
 
 	// Auto-connect to the last active profile if the user enabled it.
 	if s := a.store.Settings(); s.AutoConnect && s.ActiveProfileID != "" {
@@ -365,6 +374,18 @@ func (a *App) UpdateSubscription(id string) (model.Subscription, error) {
 	if err != nil {
 		return model.Subscription{}, err
 	}
+	// Preserve identity across refresh for equivalent servers (including active selection).
+	previous := a.store.Profiles()
+	used := map[string]bool{}
+	for i := range profiles {
+		for _, old := range previous {
+			if old.SubID == id && !used[old.ID] && old.Protocol == profiles[i].Protocol && old.Address == profiles[i].Address && old.Port == profiles[i].Port && old.Name == profiles[i].Name {
+				profiles[i].ID = old.ID
+				used[old.ID] = true
+				break
+			}
+		}
+	}
 	// Adopt the provider's name only if the current one was our own fallback to
 	// the URL host — a name the user chose must survive a refresh.
 	if info.Title != "" && s.Name == subNameFromURL(s.URL) {
@@ -430,6 +451,16 @@ func (a *App) SubscriptionHeaders() map[string]string {
 		return auto
 	}
 	h := map[string]string{"User-Agent": pick(s.UserAgent, real.UserAgent)}
+	if s.ClientPreset == "incy" {
+		h["x-client"] = "INCY"
+		h["x-app-version"] = s.ClientVersion
+		h["Accept"] = "*/*"
+		h["Accept-Language"] = "ru-RU"
+		h["x-device-locale"] = "ru-RU"
+		if s.HWIDEnabled && s.HWID == "" {
+			real.HWID = device.IncyHWID()
+		}
+	}
 	if s.HWIDEnabled {
 		h["x-hwid"] = pick(s.HWID, real.HWID)
 		h["x-device-os"] = pick(s.DeviceOS, real.OS)
@@ -449,8 +480,10 @@ func (a *App) GetSettings() model.AppSettings {
 // SaveSettings persists settings and applies the Windows autostart task to
 // match the LaunchAtStartup flag.
 func (a *App) SaveSettings(s model.AppSettings) error {
-	if err := startup.Set(s.LaunchAtStartup); err != nil {
-		runtime.LogError(a.ctx, "autostart: "+err.Error())
+	if s.LaunchAtStartup != a.store.Settings().LaunchAtStartup {
+		if err := startup.Set(s.LaunchAtStartup); err != nil {
+			return fmt.Errorf("autostart: %w", err)
+		}
 	}
 	// The migration marker is backend bookkeeping. Stamping it here means the
 	// frontend can never send it back as 0 and make a migration run twice.

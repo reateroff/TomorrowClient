@@ -1,3 +1,4 @@
+import {createPortal} from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MoreVertical } from "lucide-react";
 
@@ -30,7 +31,7 @@ export default function Menu({ items, label = "Ещё" }: Props) {
     if (!open) return;
     const b = btnRef.current?.getBoundingClientRect();
     if (!b) return;
-    const height = items.length * 36 + 8;
+    const height = Math.ceil(popRef.current?.offsetHeight ?? (items.length * 36 + 2));
     // Flip above the trigger when there is no room below it.
     const below = b.bottom + 6;
     const top =
@@ -73,11 +74,11 @@ export default function Menu({ items, label = "Ещё" }: Props) {
         <MoreVertical size={16} />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={popRef}
           style={{ top: pos.top, right: pos.right }}
-          className="animate-pop fixed z-40 min-w-48 overflow-hidden rounded-lg border border-border bg-surface-2 py-1 shadow-xl"
+          className="animate-pop fixed z-[100] min-w-48 overflow-hidden rounded-lg border border-border bg-surface-2 shadow-xl"
         >
           {items.map((it) => (
             <button
@@ -94,7 +95,7 @@ export default function Menu({ items, label = "Ещё" }: Props) {
               {it.label}
             </button>
           ))}
-        </div>
+        </div>, document.body
       )}
     </>
   );

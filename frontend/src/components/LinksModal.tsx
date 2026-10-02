@@ -1,14 +1,17 @@
+import ModalPortal from "./ModalPortal";
 import { useState } from "react";
-import { X, Copy, Check, Search } from "lucide-react";
+import { X, Copy, Check, Search, Trash2 } from "lucide-react";
 import type { Profile } from "../types";
 import { stripCountryPrefix } from "../flags";
 import { plural, maskLink } from "../format";
 import { push } from "./Toasts";
+import {confirmAction} from "./ClientConfirm";
 
 interface Props {
   title: string;
   profiles: Profile[];
   hideData: boolean; // demo mode: show only each link's scheme
+  onDelete?: (id:string)=>Promise<void>;
   onClose: () => void;
 }
 
@@ -20,8 +23,11 @@ export default function LinksModal({
   profiles,
   hideData,
   onClose,
+  onDelete,
 }: Props) {
   const [q, setQ] = useState("");
+  const [deleting,setDeleting]=useState<string|null>(null);
+  const remove=async(p:Profile)=>{if(!onDelete||deleting)return;if(!await confirmAction({title:"Удалить сервер?",description:`«${hideData?"Выбранный сервер":p.name}» будет удалён из добавленных вручную.`,confirmLabel:"Удалить",danger:true}))return;setDeleting(p.id);try{await onDelete(p.id);push("Сервер удалён","ok")}catch(e){push(String(e),"error")}finally{setDeleting(null)}};
 
   // A profile edited by hand may have no original link; those cannot be listed.
   const withLink = profiles.filter((p) => p.raw);
@@ -50,6 +56,7 @@ export default function LinksModal({
   };
 
   return (
+    <ModalPortal onClose={onClose}>
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-6 backdrop-blur-sm"
       onClick={onClose}
@@ -110,7 +117,7 @@ export default function LinksModal({
                 </div>
               ) : (
                 shown.map((p) => (
-                  <LinkRow key={p.id} profile={p} hideData={hideData} />
+                  <LinkRow key={p.id} profile={p} hideData={hideData} onDelete={onDelete&&!p.subId?()=>void remove(p):undefined} busy={deleting===p.id}/>
                 ))
               )}
             </div>
@@ -126,15 +133,20 @@ export default function LinksModal({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
 function LinkRow({
   profile: p,
   hideData,
+  onDelete,
+  busy,
 }: {
   profile: Profile;
   hideData: boolean;
+  onDelete?:()=>void;
+  busy:boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -168,6 +180,7 @@ function LinkRow({
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
       </button>
+      {onDelete&&<button aria-label="Удалить сервер" disabled={busy} onClick={onDelete} className="no-drag shrink-0 rounded-md p-1.5 text-text-faint transition hover:bg-danger/10 hover:text-danger disabled:opacity-30"><Trash2 size={14}/></button>}
     </div>
   );
 }

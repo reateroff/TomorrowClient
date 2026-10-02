@@ -67,12 +67,16 @@ var probeSlots = make(chan struct{}, maxConcurrentProbes)
 // proves the server works: the request only completes if the transport, TLS and
 // credentials are all good — as that particular core implements them.
 func ProbeLatency(p model.Profile, c model.Core, o ProbeOptions) (time.Duration, error) {
+	return probeTransport(p, c, o, timedRequest)
+}
+
+func probeTransport(p model.Profile, c model.Core, o ProbeOptions, measure func(*http.Transport, ProbeOptions) (time.Duration, error)) (time.Duration, error) {
 	o = o.withDefaults()
 	probeSlots <- struct{}{}
 	defer func() { <-probeSlots }()
 
 	if c == model.CoreMihomo {
-		return probeMihomo(p, o)
+		return probeMihomo(p, o, measure)
 	}
 
 	port, err := freeLoopbackPort()
@@ -145,7 +149,7 @@ func ProbeLatency(p model.Profile, c model.Core, o ProbeOptions) (time.Duration,
 		return 0, fmt.Errorf("unknown core %q", c)
 	}
 
-	return timedRequest(&http.Transport{
+	return measure(&http.Transport{
 		Proxy:               http.ProxyURL(proxy),
 		DisableKeepAlives:   true,
 		TLSHandshakeTimeout: o.Timeout,
@@ -187,7 +191,7 @@ func timedRequest(tr *http.Transport, o ProbeOptions) (time.Duration, error) {
 // probeMihomo tests a profile with a standalone mihomo proxy. mihomo's runtime
 // is process-wide and may be carrying the live connection, but a proxy adapter
 // can be built and used on its own without touching it.
-func probeMihomo(p model.Profile, o ProbeOptions) (time.Duration, error) {
+func probeMihomo(p model.Profile, o ProbeOptions, measure func(*http.Transport, ProbeOptions) (time.Duration, error)) (time.Duration, error) {
 	m, err := mihomo.Proxy(p)
 	if err != nil {
 		return 0, err
@@ -211,7 +215,7 @@ func probeMihomo(p model.Profile, o ProbeOptions) (time.Duration, error) {
 
 	// The request goes out through the adapter's own dialer, so GET and HEAD
 	// behave exactly as for the other cores.
-	return timedRequest(&http.Transport{
+	return measure(&http.Transport{
 		DisableKeepAlives:   true,
 		TLSHandshakeTimeout: o.Timeout,
 		DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {

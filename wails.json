@@ -13,7 +13,7 @@
   },
   "info": {
     "productName": "TomorrowClient",
-    "productVersion": "1.1.0",
+    "productVersion": "1.1.1",
     "companyName": "reater",
     "copyright": "Copyright © 2026 reater",
     "comments": "Minimal WinTun VPN client (embedded sing-box, TodayCore, Xray, mihomo)"

@@ -1,6 +1,6 @@
 // TomorrowClient — минималистичный VPN-клиент для Windows.
 //
-// Copyright (C) 2026 reater
+// # Copyright (C) 2026 reater
 //
 // This program is free software: you can redistribute it and/or modify it
 // under the terms of the GNU Affero General Public License as published by the
@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 
 	"github.com/wailsapp/wails/v2"
@@ -31,6 +32,7 @@ import (
 var assets embed.FS
 
 func main() {
+	setWindowsAppIdentity()
 	app := NewApp()
 
 	err := wails.Run(&options.App{
@@ -47,6 +49,11 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 12, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		OnDomReady: func(_ context.Context) {
+			if err := syncWindowsWindowIcon(); err != nil {
+				println("Window icon:", err.Error())
+			}
+		},
 		// A second launch (e.g. from a desktop shortcut while hidden in the
 		// tray) just re-shows the running window instead of starting a copy.
 		SingleInstanceLock: &options.SingleInstanceLock{

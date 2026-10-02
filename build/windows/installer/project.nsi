@@ -102,8 +102,11 @@ Section
     # application directory alone. Without it an install cannot connect at all.
     File "..\..\bin\wintun.dll"
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    # A versioned icon path avoids reusing the shell's old executable-icon cache.
+    File /oname=${INFO_PROJECTNAME}-${INFO_PRODUCTVERSION}.ico "..\icon.ico"
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\${INFO_PROJECTNAME}-${INFO_PRODUCTVERSION}.ico" 0
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\${INFO_PROJECTNAME}-${INFO_PRODUCTVERSION}.ico" 0
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols

@@ -25,7 +25,7 @@ import (
 )
 
 // Version is the client version shown on the About screen.
-const Version = "1.1.0"
+const Version = "1.1.1"
 
 // App is the Wails-bound application object. Every exported method here is
 // callable from the React frontend.
